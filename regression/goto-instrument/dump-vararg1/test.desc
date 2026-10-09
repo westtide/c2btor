@@ -1,0 +1,10 @@
+KNOWNBUG
+main.c
+--dump-c
+^EXIT=0$
+^SIGNAL=0$
+va_list
+--
+^warning: ignoring
+--
+We are missing __CPROVER_va_start

@@ -1,0 +1,12 @@
+CORE
+main.c
+--pointer-check _ --no-malloc-may-fail --verbosity 9
+^EXIT=0$
+^SIGNAL=0$
+Quick filter\: [1-9]\d* out of 67 candidates were filtered out\.
+^\[main.pointer\_dereference.\d+\] .* SUCCESS$
+^VERIFICATION SUCCESSFUL$
+--
+--
+This test shows that the loop-invariant synthesizer can enumerate
+strengthening clauses for invariant-not-preserved violation.

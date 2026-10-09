@@ -1,0 +1,9 @@
+CORE
+main.cpp
+elsewhere.cpp
+^\[elsewhere\.array_bounds\.1\] line 7 array 'my_string' upper bound in my_string\[.*10\]: FAILURE$
+^EXIT=10$
+^SIGNAL=0$
+^VERIFICATION FAILED$
+--
+^warning: ignoring

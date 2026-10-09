@@ -1,0 +1,12 @@
+CORE dfcc-only
+main.c
+--dfcc main --replace-call-with-contract foo
+^\[foo.precondition.\d+\] line \d+ Check requires clause of contract contract::foo for function foo: FAILURE$
+^VERIFICATION FAILED$
+^EXIT=10$
+^SIGNAL=0$
+--
+--
+Checks whether CBMC successfully assert __CPROVER_is_fresh for arrays.
+Test fails because allocated array was smaller then the one required
+in the contract.

@@ -1,0 +1,30 @@
+CORE dfcc-only
+main.c
+--dfcc main --replace-call-with-contract foo
+^\[bar.assertion.\d+\] line 27 assertion 0: FAILURE$
+^\[bar.assigns.\d+\] line 28 Check that \*x is assignable: SUCCESS$
+^\[bar.pointer_dereference.\d+\] line 28 dereference failure: pointer NULL in \*x: SUCCESS$
+^\[bar.pointer_dereference.\d+\] line 28 dereference failure: pointer invalid in \*x: SUCCESS$
+^\[bar.pointer_dereference.\d+\] line 28 dereference failure: deallocated dynamic object in \*x: SUCCESS$
+^\[bar.pointer_dereference.\d+\] line 28 dereference failure: dead object in \*x: SUCCESS$
+^\[bar.pointer_dereference.\d+\] line 28 dereference failure: pointer outside object bounds in \*x: SUCCESS$
+^\[bar.pointer_dereference.\d+\] line 28 dereference failure: invalid integer address in \*x: SUCCESS$
+^\[bar.assertion.\d+\] line 32 assertion 0: FAILURE$
+^\[bar.assertion.\d+\] line 33 assertion x == \(\(.*\)NULL\): SUCCESS$
+^\[bar.assigns.\d+\] line 34 Check that \*y is assignable: SUCCESS$
+^\[bar.pointer_dereference.\d+\] line 34 dereference failure: pointer NULL in \*y: SUCCESS$
+^\[bar.pointer_dereference.\d+\] line 34 dereference failure: pointer invalid in \*y: SUCCESS$
+^\[bar.pointer_dereference.\d+\] line 34 dereference failure: deallocated dynamic object in \*y: SUCCESS$
+^\[bar.pointer_dereference.\d+\] line 34 dereference failure: dead object in \*y: SUCCESS$
+^\[bar.pointer_dereference.\d+\] line 34 dereference failure: pointer outside object bounds in \*y: SUCCESS$
+^\[bar.pointer_dereference.\d+\] line 34 dereference failure: invalid integer address in \*y: SUCCESS$
+^EXIT=10$
+^SIGNAL=0$
+^VERIFICATION FAILED$
+--
+--
+Illustrates the behaviour of `__CPROVER_is_fresh` under disjunctions in assume contexts.
+The postcondition of `foo` describes a disjunction of cases: either `x` is fresh and `y` is null,
+or `x` is null and `y` is fresh. The function `bar` branches on `y == NULL`.
+The test succeeds if the two `assert(0)` are falsifiable, which which shows that
+both cases of the disjunction expressed in the ensures clause of `foo` are reachable.

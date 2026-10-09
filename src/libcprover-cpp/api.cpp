@@ -1,0 +1,270 @@
+// Author: Fotis Koutoulakis for Diffblue Ltd.
+
+#include "api.h"
+
+#include <util/cmdline.h>
+#include <util/config.h>
+#include <util/invariant.h>
+#include <util/message.h>
+#include <util/options.h>
+#include <util/ui_message.h>
+#include <util/version.h>
+
+#include <goto-programs/goto_model.h>
+#include <goto-programs/initialize_goto_model.h>
+#include <goto-programs/process_goto_program.h>
+#include <goto-programs/read_goto_binary.h>
+#include <goto-programs/remove_skip.h>
+#include <goto-programs/remove_unused_functions.h>
+#include <goto-programs/set_properties.h>
+
+#include <ansi-c/ansi_c_language.h>
+#include <ansi-c/cprover_library.h>
+#include <ansi-c/gcc_version.h>
+#include <ansi-c/goto-conversion/link_to_library.h>
+#include <assembler/remove_asm.h>
+#include <goto-checker/all_properties_verifier_with_trace_storage.h>
+#include <goto-checker/multi_path_symex_checker.h>
+#include <langapi/mode.h>
+#include <pointer-analysis/add_failed_symbols.h>
+
+#include <memory>
+#include <string>
+#include <vector>
+
+extern configt config;
+
+std::unique_ptr<std::string> api_sessiont::get_api_version() const
+{
+  return std::make_unique<std::string>(std::string{CBMC_VERSION});
+}
+
+struct api_session_implementationt
+{
+  std::unique_ptr<goto_modelt> model;
+  std::unique_ptr<message_handlert> message_handler;
+  std::unique_ptr<optionst> options;
+};
+
+api_sessiont::api_sessiont() : api_sessiont{api_optionst::create()}
+{
+}
+
+api_sessiont::api_sessiont(const api_optionst &options)
+  : implementation{std::make_unique<api_session_implementationt>()}
+{
+  implementation->message_handler =
+    std::make_unique<null_message_handlert>(null_message_handlert{});
+  implementation->options = options.to_engine_options();
+  // Needed to initialise the language options correctly
+  cmdlinet cmdline;
+  // config is global in config.cpp
+  config.set(cmdline);
+  // Initialise C language mode
+  register_language(new_ansi_c_language);
+  // configure gcc, if required -- get_goto_program will have set the config
+  if(config.ansi_c.preprocessor == configt::ansi_ct::preprocessort::GCC)
+  {
+    gcc_versiont gcc_version;
+    gcc_version.get("gcc");
+    configure_gcc(gcc_version);
+  }
+}
+
+api_sessiont::~api_sessiont() = default;
+
+struct api_messaget
+{
+  std::string string;
+  unsigned level;
+};
+
+const char *api_message_get_string(const api_messaget &message)
+{
+  return message.string.c_str();
+}
+
+bool api_message_is_error(const api_messaget &message)
+{
+  return message.level == messaget::message_levelt::M_ERROR;
+}
+
+class api_message_handlert : public message_handlert
+{
+public:
+  explicit api_message_handlert(
+    api_message_callbackt callback,
+    api_call_back_contextt context);
+
+  void print(unsigned level, const std::string &message) override;
+
+  // Unimplemented for now. We may need to implement these as string conversions
+  // or something later.
+  void print(unsigned level, const xmlt &xml) override{};
+  void print(unsigned level, const jsont &json) override{};
+
+  void flush(unsigned) override{};
+
+private:
+  api_call_back_contextt context;
+  api_message_callbackt callback;
+};
+
+api_message_handlert::api_message_handlert(
+  api_message_callbackt callback,
+  api_call_back_contextt context)
+  : message_handlert{}, context{context}, callback{callback}
+{
+}
+
+void api_message_handlert::print(unsigned level, const std::string &message)
+{
+  if(!callback)
+    return;
+  api_messaget api_message{message, level};
+  callback(api_message, context);
+}
+
+void api_sessiont::set_message_callback(
+  api_message_callbackt callback,
+  api_call_back_contextt context)
+{
+  implementation->message_handler =
+    std::make_unique<api_message_handlert>(callback, context);
+}
+
+void api_sessiont::load_model_from_files(
+  const std::vector<std::string> &files) const
+{
+  implementation->model = std::make_unique<goto_modelt>(initialize_goto_model(
+    files, *implementation->message_handler, *implementation->options));
+}
+
+std::unique_ptr<verification_resultt> api_sessiont::verify_model() const
+{
+  PRECONDITION(implementation->model);
+
+  bool empty_result = preprocess_model();
+  if(empty_result)
+  {
+    return {};
+  }
+
+  return run_verifier();
+}
+
+void api_sessiont::read_goto_binary(std::string &file) const
+{
+  messaget log{*implementation->message_handler};
+  auto read_opt_val =
+    ::read_goto_binary(file, *implementation->message_handler);
+  if(read_opt_val.has_value())
+  {
+    implementation->model =
+      std::make_unique<goto_modelt>(std::move(read_opt_val.value()));
+  }
+  else
+  {
+    log.error() << "Unable to read goto-binary from file " << file
+                << messaget::eom;
+  }
+}
+
+bool api_sessiont::is_goto_binary(std::string &file) const
+{
+  return ::is_goto_binary(file, *implementation->message_handler);
+}
+
+bool api_sessiont::preprocess_model() const
+{
+  // Remove inline assembler; this needs to happen before adding the library.
+  remove_asm(*implementation->model, *implementation->message_handler);
+
+  // add the library
+  messaget log{*implementation->message_handler};
+  log.status() << "Adding CPROVER library (" << config.ansi_c.arch << ")"
+               << messaget::eom;
+  link_to_library(
+    *implementation->model,
+    *implementation->message_handler,
+    cprover_c_library_factory);
+  // library functions may introduce inline assembler
+  while(has_asm(*implementation->model))
+  {
+    remove_asm(*implementation->model, *implementation->message_handler);
+    link_to_library(
+      *implementation->model,
+      *implementation->message_handler,
+      cprover_c_library_factory);
+  }
+
+  // Common removal of types and complex constructs
+  if(::process_goto_program(
+       *implementation->model, *implementation->options, log))
+  {
+    return true;
+  }
+
+  // add failed symbols
+  // needs to be done before pointer analysis
+  add_failed_symbols(implementation->model->symbol_table);
+
+  // label the assertions
+  // This must be done after adding assertions and
+  // before using the argument of the "property" option.
+  // Do not re-label after using the property slicer because
+  // this would cause the property identifiers to change.
+  label_properties(*implementation->model);
+
+  remove_skip(*implementation->model);
+  return false;
+}
+
+std::unique_ptr<verification_resultt> api_sessiont::run_verifier() const
+{
+  ui_message_handlert ui_message_handler(*implementation->message_handler);
+  all_properties_verifier_with_trace_storaget<multi_path_symex_checkert>
+    verifier(
+      *implementation->options, ui_message_handler, *implementation->model);
+
+  verification_resultt result;
+  auto results = verifier();
+
+  // Print messages collected to callback buffer.
+  verifier.report();
+  // Set results object before returning.
+  result.set_result(results);
+
+  auto properties = verifier.get_properties();
+  result.set_properties(properties);
+  return std::make_unique<verification_resultt>(result);
+}
+
+void api_sessiont::drop_unused_functions() const
+{
+  INVARIANT(
+    implementation->model != nullptr,
+    "Model has not been loaded. Load it first using "
+    "api::load_model_from_files");
+
+  messaget log{*implementation->message_handler};
+  log.status() << "Performing instrumentation pass: dropping unused functions"
+               << messaget::eom;
+
+  remove_unused_functions(
+    *implementation->model, *implementation->message_handler);
+}
+
+void api_sessiont::validate_goto_model() const
+{
+  INVARIANT(
+    implementation->model != nullptr,
+    "Model has not been loaded. Load it first using "
+    "api::load_model_from_files");
+
+  messaget log{*implementation->message_handler};
+  log.status() << "Validating consistency of goto-model supplied to API session"
+               << messaget::eom;
+
+  implementation->model->validate();
+}

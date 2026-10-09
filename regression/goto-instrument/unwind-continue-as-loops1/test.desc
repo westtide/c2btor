@@ -1,0 +1,10 @@
+CORE
+main.c
+--verbosity 10 --unwind 5 --continue-as-loops _ --verbosity 8
+^Unwinding loop.*iteration 5
+^EXIT=0$
+^SIGNAL=0$
+^VERIFICATION SUCCESSFUL$
+--
+^warning: ignoring
+^Unwinding loop.*iteration 6

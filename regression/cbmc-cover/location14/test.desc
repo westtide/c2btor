@@ -1,0 +1,14 @@
+CORE
+main.c
+--no-standard-checks --cover location
+^EXIT=0$
+^SIGNAL=0$
+^\[main.coverage.1\] file main.c line 8 function main block 1.*: SATISFIED$
+^\[main.coverage.2\] file main.c line 12 function main block 2.*: FAILED$
+^\[main.coverage.3\] file main.c line 12 function main block 3.*: FAILED$
+^\[main.coverage.4\] file main.c line 12 function main block 4.*: FAILED$
+^\[main.coverage.5\] file main.c line 13 function main block 5.*: SATISFIED$
+^\[foo.coverage.1\] file main.c line 3 function foo block 1.*: FAILED$
+^\*\* 2 of 6 covered \(33.3%\)
+--
+^warning: ignoring

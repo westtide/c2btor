@@ -1,0 +1,10 @@
+CORE dfcc-only
+main.c
+--dfcc main --replace-call-with-contract foo _ --no-standard-checks
+^EXIT=0$
+^SIGNAL=0$
+^VERIFICATION SUCCESSFUL$
+--
+--
+This test shows that replacing a call by a contract establishes the
+postconditions of the contracts.

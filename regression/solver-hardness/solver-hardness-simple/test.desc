@@ -1,0 +1,9 @@
+CORE
+main.c
+--write-solver-stats-to 'solver_hardness.json' --stop-on-fail
+^EXIT=10$
+^SIGNAL=0$
+^VERIFICATION FAILED$
+\"SAT_hardness\":\{(\"ClauseSet\":\[.*\]|\"Clauses\":\d+|\"Variables\":\d+|\"Literals\":\d+),(\"ClauseSet\":\[.*\]|\"Clauses\":\d+|\"Variables\":\d+|\"Literals\":\d+),(\"ClauseSet\":\[.*\]|\"Clauses\":\d+|\"Variables\":\d+|\"Literals\":\d+),(\"ClauseSet\":\[.*\]|\"Clauses\":\d+|\"Variables\":\d+|\"Literals\":\d+)\}
+--
+^warning: ignoring

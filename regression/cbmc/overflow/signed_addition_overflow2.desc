@@ -1,0 +1,9 @@
+CORE
+signed_addition_overflow2.c
+
+^EXIT=10$
+^SIGNAL=0$
+^\[.*\] .* arithmetic overflow on signed \+ in .*: FAILURE$
+^VERIFICATION FAILED$
+--
+^warning: ignoring

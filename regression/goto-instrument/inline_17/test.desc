@@ -1,0 +1,11 @@
+CORE
+main.c
+--function-inline func1
+^EXIT=10$
+^SIGNAL=0$
+^\[func1\.no-body\.func2\] line 3 no body for callee func2: FAILURE$
+^VERIFICATION FAILED$
+func1\(\)
+func2\(\)
+--
+^warning: ignoring

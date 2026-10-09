@@ -1,0 +1,11 @@
+CORE dfcc-only
+main.c
+--no-malloc-may-fail --dfcc main --enforce-contract foo
+^EXIT=0$
+^SIGNAL=0$
+\[foo.postcondition.\d+\].*Check ensures clause of contract contract::foo for function foo: SUCCESS$
+^VERIFICATION SUCCESSFUL$
+--
+--
+Checks whether ensures(is_fresh()) pass on functions that perform allocation
+directly and return a new object.

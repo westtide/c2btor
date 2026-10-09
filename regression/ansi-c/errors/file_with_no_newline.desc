@@ -1,0 +1,7 @@
+CORE
+file_with_no_newline.i
+
+^file_with_no_newline\.i((:[01]:1)|(\(1\))): error: .*$
+^EXIT=(1|64)$
+^SIGNAL=0$
+--

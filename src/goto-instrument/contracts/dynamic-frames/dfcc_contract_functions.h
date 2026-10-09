@@ -1,0 +1,134 @@
+/*******************************************************************\
+
+Module: Dynamic frame condition checking for function contracts
+
+Author: Remi Delmas, delmasrd@amazon.com
+Date: August 2022
+
+\*******************************************************************/
+
+/// \file
+/// Translates assigns and frees clauses of a function contract into goto
+/// functions that allow to build and havoc write sets dynamically.
+
+#ifndef CPROVER_GOTO_INSTRUMENT_CONTRACTS_DYNAMIC_FRAMES_DFCC_CONTRACT_FUNCTIONS_H
+#define CPROVER_GOTO_INSTRUMENT_CONTRACTS_DYNAMIC_FRAMES_DFCC_CONTRACT_FUNCTIONS_H
+
+#include <util/message.h>
+#include <util/namespace.h>
+
+class code_with_contract_typet;
+class dfcc_contract_clauses_codegent;
+class dfcc_instrumentt;
+class dfcc_libraryt;
+class dfcc_spec_functionst;
+class goto_modelt;
+
+/// Generates GOTO functions modelling a contract assigns and frees clauses.
+///
+/// The generated functions are the following:
+///
+/// ```c
+/// // Populates write_set_to_fill with targets of the assigns clause
+/// // checks its own body against write_set_to_check:
+/// void contract_id::c_assigns(
+///     function-params,
+///     write_set_to_fill,
+///     write_set_to_check);
+/// ```
+///
+/// ```c
+/// // Havocs the targets specified in the assigns clause, assuming
+/// // write_set_to_havoc is a snapshot created using contract_id::c_assigns
+/// void contract_id::c_assigns::havoc(write_set_to_havoc);
+/// ```
+///
+/// ```c
+/// // Populates write_set_to_fill with targets of the frees clause
+/// // checks its own body against write_set_to_check:
+/// void contract_id::frees(
+///     function-params,
+///     write_set_to_fill,
+///     write_set_to_check);
+/// ```
+class dfcc_contract_functionst
+{
+public:
+  /// \param pure_contract_symbol the contract to generate code from
+  /// \param goto_model goto model being transformed
+  /// \param message_handler used debug/warning/error messages
+  /// \param library the contracts instrumentation library
+  /// \param spec_functions provides translation methods for assignable set
+  /// \param contract_clauses_codegen provides GOTO code generation methods
+  /// for assigns and free clauses.
+  /// \param instrument Used to instrument generated functions for side effects
+  dfcc_contract_functionst(
+    const symbolt &pure_contract_symbol,
+    goto_modelt &goto_model,
+    message_handlert &message_handler,
+    dfcc_libraryt &library,
+    dfcc_spec_functionst &spec_functions,
+    dfcc_contract_clauses_codegent &contract_clauses_codegen,
+    dfcc_instrumentt &instrument);
+
+  /// Instruments the given function without loop contracts and checks that no
+  /// function pointer contracts were discovered.
+  void instrument_without_loop_contracts_check_no_pointer_contracts(
+    const irep_idt &spec_function_id);
+
+  /// Returns the contract::c_assigns function symbol
+  const symbolt &get_spec_assigns_function_symbol() const;
+
+  /// Returns the contract::c_assigns::havoc function symbol
+  const symbolt &get_spec_assigns_havoc_function_symbol() const;
+
+  /// Returns the contract::frees function symbol
+  const symbolt &get_spec_frees_function_symbol() const;
+
+  /// Returns the maximum number of targets in the assigns clause
+  const std::size_t get_nof_assigns_targets() const;
+
+  /// Returns the maximum number of targets in the frees clause
+  const std::size_t get_nof_frees_targets() const;
+
+  /// The function symbol carrying the contract
+  const symbolt &pure_contract_symbol;
+
+  /// The code_with_contract_type carrying the contract clauses
+  const code_with_contract_typet &code_with_contract;
+
+  /// Identifier of the contract::c_assigns function
+  const irep_idt spec_assigns_function_id;
+
+  /// Identifier of the contract::c_assigns::havoc function
+  const irep_idt spec_assigns_havoc_function_id;
+
+  /// Identifier of the contract::frees function
+  const irep_idt spec_frees_function_id;
+
+  /// Language mode of the contract symbol
+  const irep_idt &language_mode;
+
+protected:
+  goto_modelt &goto_model;
+  message_handlert &message_handler;
+  messaget log;
+  dfcc_libraryt &library;
+  dfcc_spec_functionst &spec_functions;
+  dfcc_contract_clauses_codegent &contract_clauses_codegen;
+  dfcc_instrumentt &instrument;
+  namespacet ns;
+  std::size_t nof_assigns_targets;
+  std::size_t nof_frees_targets;
+
+  /// Translates the contract's assigns clause to a GOTO function that uses the
+  /// `assignable`, `object_upto`, `object_from`, object_whole` built-ins to
+  /// express targets.
+  void gen_spec_assigns_function();
+
+  /// Translates the contract's frees clause to a GOTO function that uses the
+  /// `freeable` built-in to express targets.
+  void gen_spec_frees_function();
+};
+
+#endif

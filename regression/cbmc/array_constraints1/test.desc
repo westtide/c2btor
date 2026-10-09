@@ -1,0 +1,9 @@
+CORE no-new-smt
+main.c
+--unwind 2
+^EXIT=10$
+^SIGNAL=0$
+^VERIFICATION FAILED$
+^\*\* 4 of \d+
+--
+^warning: ignoring

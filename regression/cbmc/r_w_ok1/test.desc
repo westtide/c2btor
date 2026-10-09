@@ -1,0 +1,10 @@
+CORE
+main.c
+--no-malloc-may-fail
+__CPROVER_[rw]_ok\(arbitrary_size, n \+ 1\): FAILURE$
+^\*\* 2 of \d+ failed
+^VERIFICATION FAILED$
+^EXIT=10$
+^SIGNAL=0$
+--
+^warning: ignoring

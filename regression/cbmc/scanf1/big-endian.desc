@@ -1,0 +1,8 @@
+CORE no-new-smt
+main.i
+--big-endian --no-standard-checks
+^EXIT=10$
+^SIGNAL=0$
+^\*\* 8 of 8 failed
+--
+^warning: ignoring

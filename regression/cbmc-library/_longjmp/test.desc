@@ -1,0 +1,10 @@
+CORE
+main.c
+--pointer-check --bounds-check
+^\[_?longjmp.assertion.1\] line 12 _?longjmp requires instrumentation: FAILURE$
+^\[main.assertion.1\] line 12 unreachable: SUCCESS$
+^VERIFICATION FAILED$
+^EXIT=10$
+^SIGNAL=0$
+--
+^warning: ignoring

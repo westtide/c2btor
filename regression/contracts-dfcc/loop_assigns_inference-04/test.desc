@@ -1,0 +1,14 @@
+CORE dfcc-only
+main.c
+--dfcc main --apply-loop-contracts
+^EXIT=0$
+^SIGNAL=0$
+^\[main.loop_invariant_base.\d+\] line \d+ Check invariant before entry for loop .*: SUCCESS$
+^\[main.loop_invariant_base.\d+\] line \d+ Check invariant before entry for loop .*: SUCCESS$
+^\[main.loop_invariant_step.\d+\] line \d+ Check invariant after step for loop .*: SUCCESS$
+^\[main.loop_step_unwinding.\d+\] line \d+ Check step was unwound for loop .*: SUCCESS$
+^\[set_len.assigns.\d+\] line \d+ Check that h\-\>pos is assignable: SUCCESS
+^VERIFICATION SUCCESSFUL$
+--
+--
+This test checks assigns h->pos is inferred correctly.

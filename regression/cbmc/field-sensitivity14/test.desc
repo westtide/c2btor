@@ -1,0 +1,11 @@
+CORE no-new-smt
+main.c
+--verbosity 8
+^Generated \d+ VCC\(s\), \d remaining after simplification$
+^VERIFICATION SUCCESSFUL$
+^EXIT=0$
+^SIGNAL=0$
+--
+--
+All properties in this example can be solved by combining field-sensitive
+constant propagation and simplification.

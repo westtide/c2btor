@@ -1,0 +1,9 @@
+CORE
+main.c
+--little-endian
+^EXIT=10$
+^SIGNAL=0$
+^\[main\.assertion\.2\] .*: FAILURE$
+^\*\* 2 of 4 failed
+--
+^warning: ignoring

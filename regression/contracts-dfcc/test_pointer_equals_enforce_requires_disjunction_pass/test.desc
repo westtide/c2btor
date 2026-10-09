@@ -1,0 +1,32 @@
+CORE dfcc-only
+main.c
+--dfcc main --enforce-contract foo
+^\[foo.assertion.\d+\] line 15 assertion 0: FAILURE$
+^\[foo.assertion.\d+\] line \d+ assertion __CPROVER_POINTER_OBJECT\(\(.*\)a\) == __CPROVER_POINTER_OBJECT\(\(.*\)x\): SUCCESS$
+^\[foo.assigns.\d+\] line \d+ Check that \*x is assignable: SUCCESS$
+^\[foo.pointer_dereference.\d+\] line \d+ dereference failure: pointer NULL in \*x: SUCCESS$
+^\[foo.pointer_dereference.\d+\] line \d+ dereference failure: pointer invalid in \*x: SUCCESS$
+^\[foo.pointer_dereference.\d+\] line \d+ dereference failure: deallocated dynamic object in \*x: SUCCESS$
+^\[foo.pointer_dereference.\d+\] line \d+ dereference failure: dead object in \*x: SUCCESS$
+^\[foo.pointer_dereference.\d+\] line \d+ dereference failure: pointer outside object bounds in \*x: SUCCESS$
+^\[foo.pointer_dereference.\d+\] line \d+ dereference failure: invalid integer address in \*x: SUCCESS$
+^\[foo.assertion.\d+\] line 21 assertion 0: FAILURE$
+^\[foo.assertion.\d+\] line \d+ assertion x == \(\(.*\)NULL\): SUCCESS$
+^\[foo.assertion.\d+\] line \d+ assertion __CPROVER_POINTER_OBJECT\(\(.*\)a\) == __CPROVER_POINTER_OBJECT\(\(.*\)y\): SUCCESS$
+^\[foo.assigns.\d+\] line \d+ Check that \*y is assignable: SUCCESS$
+^\[foo.pointer_dereference.\d+\] line \d+ dereference failure: pointer NULL in \*y: SUCCESS$
+^\[foo.pointer_dereference.\d+\] line \d+ dereference failure: pointer invalid in \*y: SUCCESS$
+^\[foo.pointer_dereference.\d+\] line \d+ dereference failure: deallocated dynamic object in \*y: SUCCESS$
+^\[foo.pointer_dereference.\d+\] line \d+ dereference failure: dead object in \*y: SUCCESS$
+^\[foo.pointer_dereference.\d+\] line \d+ dereference failure: pointer outside object bounds in \*y: SUCCESS$
+^\[foo.pointer_dereference.\d+\] line \d+ dereference failure: invalid integer address in \*y: SUCCESS$
+^EXIT=10$
+^SIGNAL=0$
+^VERIFICATION FAILED$
+--
+--
+Illustrates the behaviour of `__CPROVER_pointer_equals` under disjunctions in assume contexts.
+The precondition of `foo` describes a disjunction of cases, either `x` equals `a` and `y` is null,
+or `x` is null and `y` equals `a`. The function `foo` branches on `y == NULL`.
+The test suceeds if the two `assert(0)` in `foo` are falsifiable, which which shows
+that both cases of the disjunction expressed in the requires clause are reachable.

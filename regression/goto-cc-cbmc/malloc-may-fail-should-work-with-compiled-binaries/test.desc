@@ -1,0 +1,9 @@
+CORE
+test.c
+--malloc-may-fail --malloc-fail-null
+^EXIT=10$
+^SIGNAL=0$
+\[main.assertion.1\] line 7 assertion array != NULL: FAILURE
+--
+--
+Compiling a file with goto-cc should not affect how --malloc-may-fail behaves

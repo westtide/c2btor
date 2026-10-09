@@ -1,0 +1,11 @@
+CORE dfcc-only
+main.c
+--dfcc main --replace-call-with-contract foo --malloc-may-fail --malloc-fail-null
+^EXIT=0$
+^SIGNAL=0$
+\[bar\.assertion\.\d+\] line \d+ expecting SUCCESS: SUCCESS$
+^VERIFICATION SUCCESSFUL$
+--
+This test checks that objects of size zero or of __CPROVER_max_malloc_size
+do not cause spurious falsifications in assigns clause instrumentation
+in contract replacement mode.

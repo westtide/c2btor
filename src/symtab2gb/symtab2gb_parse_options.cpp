@@ -1,0 +1,215 @@
+/******************************************************************\
+
+Module: symtab2gb_parse_options
+
+Author: Diffblue Ltd.
+
+\******************************************************************/
+
+#include "symtab2gb_parse_options.h"
+
+#include <util/config.h>
+#include <util/exception_utils.h>
+#include <util/exit_codes.h>
+#include <util/help_formatter.h>
+#include <util/json.h>
+#include <util/version.h>
+
+#include <goto-programs/goto_model.h>
+#include <goto-programs/write_goto_binary.h>
+
+#include <ansi-c/ansi_c_language.h>
+#include <ansi-c/goto-conversion/goto_convert_functions.h>
+#include <json-symtab-language/json_goto_functions.h>
+#include <json-symtab-language/json_symtab_language.h>
+#include <json/json_parser.h>
+#include <langapi/mode.h>
+#include <linking/linking.h>
+
+#include <fstream>
+#include <iostream>
+#include <string>
+
+symtab2gb_parse_optionst::symtab2gb_parse_optionst(int argc, const char *argv[])
+  : parse_options_baset{SYMTAB2GB_OPTIONS,
+                        argc,
+                        argv,
+                        std::string("SYMTAB2GB ") + CBMC_VERSION}
+{
+}
+
+static inline bool failed(bool error_indicator)
+{
+  return error_indicator;
+}
+
+static void run_symtab2gb(
+  const std::vector<std::string> &symtab_filenames,
+  const std::string &gb_filename,
+  const std::string &goto_functions_filename_or_empty,
+  const std::string &cmdline_verbosity)
+{
+  // try opening all the files first to make sure we can
+  // even read/write what we want
+  std::ofstream out_file{gb_filename, std::ios::binary};
+  if(!out_file.is_open())
+  {
+    throw system_exceptiont{"couldn't open output file '" + gb_filename + "'"};
+  }
+  std::vector<std::ifstream> symtab_files;
+  for(auto const &symtab_filename : symtab_filenames)
+  {
+    std::ifstream symtab_file{symtab_filename};
+    if(!symtab_file.is_open())
+    {
+      throw system_exceptiont{"couldn't open input file '" + symtab_filename +
+                              "'"};
+    }
+    symtab_files.emplace_back(std::move(symtab_file));
+  }
+
+  // Open goto functions file if specified
+  std::optional<std::ifstream> goto_functions_file;
+  if(!goto_functions_filename_or_empty.empty())
+  {
+    goto_functions_file = std::ifstream{goto_functions_filename_or_empty};
+    if(!goto_functions_file->is_open())
+    {
+      throw system_exceptiont{
+        "couldn't open goto functions file '" +
+        goto_functions_filename_or_empty + "'"};
+    }
+  }
+
+  stream_message_handlert message_handler{std::cerr};
+  messaget::eval_verbosity(
+    cmdline_verbosity, messaget::M_STATUS, message_handler);
+
+  auto const symtab_language = new_json_symtab_language();
+
+  symbol_tablet linked_symbol_table;
+
+  for(std::size_t ix = 0; ix < symtab_files.size(); ++ix)
+  {
+    auto const &symtab_filename = symtab_filenames[ix];
+    auto &symtab_file = symtab_files[ix];
+    if(failed(
+         symtab_language->parse(symtab_file, symtab_filename, message_handler)))
+    {
+      source_locationt source_location;
+      source_location.set_file(symtab_filename);
+      throw invalid_source_file_exceptiont{
+        "failed to parse symbol table", source_location};
+    }
+    symbol_tablet symtab{};
+    if(failed(symtab_language->typecheck(symtab, "<unused>", message_handler)))
+    {
+      source_locationt source_location;
+      source_location.set_file(symtab_filename);
+      throw invalid_source_file_exceptiont{
+        "failed to typecheck symbol table", source_location};
+    }
+    config.set_from_symbol_table(symtab);
+
+    if(failed(linking(linked_symbol_table, symtab, message_handler)))
+    {
+      throw invalid_input_exceptiont{
+        "failed to link `" + symtab_filename + "'"};
+    }
+  }
+
+  goto_modelt linked_goto_model;
+  linked_goto_model.symbol_table.swap(linked_symbol_table);
+
+  // If goto functions file is specified, parse it and use those functions
+  if(goto_functions_file.has_value())
+  {
+    jsont json;
+    if(failed(parse_json(
+         *goto_functions_file,
+         goto_functions_filename_or_empty,
+         message_handler,
+         json)))
+    {
+      source_locationt source_location;
+      source_location.set_file(goto_functions_filename_or_empty);
+      throw invalid_source_file_exceptiont{
+        "failed to parse JSON", source_location};
+    }
+    goto_functions_from_json(json, linked_goto_model.goto_functions);
+  }
+
+  // Convert symbols to goto functions
+  goto_convert(linked_goto_model, message_handler);
+
+  if(failed(write_goto_binary(out_file, linked_goto_model)))
+  {
+    throw system_exceptiont{"failed to write goto binary to " + gb_filename};
+  }
+}
+
+void symtab2gb_parse_optionst::register_languages()
+{
+  // As this is a converter and linker it only really needs to support
+  // the JSON symtab front-end.
+  register_language(new_json_symtab_language);
+  // Workaround to allow external front-ends to use "C" mode
+  register_language(new_ansi_c_language);
+}
+
+int symtab2gb_parse_optionst::doit()
+{
+  if(cmdline.isset("version"))
+  {
+    log.status() << CBMC_VERSION << '\n';
+    return CPROVER_EXIT_SUCCESS;
+  }
+  if(cmdline.args.empty())
+  {
+    throw invalid_command_line_argument_exceptiont{
+      "expect at least one input file", "<json-symtab-file>"};
+  }
+  std::vector<std::string> symtab_filenames = cmdline.args;
+  std::string gb_filename = "a.out";
+  if(cmdline.isset(SYMTAB2GB_OUT_FILE_OPT))
+  {
+    gb_filename = cmdline.get_value(SYMTAB2GB_OUT_FILE_OPT);
+  }
+
+  std::string goto_functions_filename_or_empty =
+    cmdline.get_value(SYMTAB2GB_GOTO_FUNCTIONS_OPT);
+
+  register_languages();
+  config.set(cmdline);
+  run_symtab2gb(
+    symtab_filenames,
+    gb_filename,
+    goto_functions_filename_or_empty,
+    cmdline.get_value("verbosity"));
+  return CPROVER_EXIT_SUCCESS;
+}
+
+void symtab2gb_parse_optionst::help()
+{
+  log.status() << '\n'
+               << banner_string("symtab2gb", CBMC_VERSION) << '\n'
+               << align_center_with_border("Copyright (C) 2019") << '\n'
+               << align_center_with_border("Diffblue Ltd.") << '\n'
+               << align_center_with_border("info@diffblue.com") << '\n';
+
+  log.status() << help_formatter(
+    "\n"
+    "Usage:                                  \tPurpose:\n"
+    "\n"
+    " {bsymtab2gb} [{y-?}] [{y-h}] [{y--help}] \t show this help\n"
+    " {bsymtab2gb} [options] {ujson-symtab-file...} \t compile CBMC symbol"
+    " table(s) in JSON format to a single goto-binary\n"
+    "\n"
+    "Options:\n"
+    " {y--out} {uoutfile} \t specify the filename of the resulting binary"
+    " (default: a.out)\n"
+    " {y--goto-functions} {ufile} \t specify a file containing JSON-encoded"
+    " goto functions\n"
+    " {y--verbosity} {u#} \t verbosity level\n");
+  log.status() << messaget::eom;
+}

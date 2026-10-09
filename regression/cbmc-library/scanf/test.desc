@@ -1,0 +1,13 @@
+CORE
+main.c
+--no-signed-overflow-check --pointer-check --bounds-check
+\[main.assertion.1\] line 11 need not remain zero: FAILURE$
+\[main.assertion.2\] line 13 may remain zero: FAILURE$
+\[main.assertion.3\] line 18 need not remain zero: FAILURE$
+\[main.assertion.4\] line 20 may remain zero: FAILURE$
+^\*\* 4 of \d+ failed
+^VERIFICATION FAILED$
+^EXIT=10$
+^SIGNAL=0$
+--
+^warning: ignoring

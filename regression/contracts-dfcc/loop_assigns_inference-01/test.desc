@@ -1,0 +1,18 @@
+CORE dfcc-only
+main.c
+--dfcc main --apply-loop-contracts _ --no-standard-checks
+^EXIT=0$
+^SIGNAL=0$
+^\[body_1.assigns.\d+\] .* Check that j is assignable: SUCCESS$
+^\[body_2.assigns.\d+\] .* Check that \*i is assignable: SUCCESS$
+^\[body_3.assigns.\d+\] .* Check that \*i is assignable: SUCCESS$
+^\[incr.assigns.\d+\] .* Check that \*i is assignable: SUCCESS$
+^\[main.loop_invariant_base.\d+\] line \d+ Check invariant before entry for loop .*: SUCCESS$
+^\[main.loop_invariant_step.\d+\] line \d+ Check invariant after step for loop .*: SUCCESS$
+^\[main.loop_step_unwinding.\d+\] line \d+ Check step was unwound for loop .*: SUCCESS$
+^\[main.assertion.\d+\] .* assertion j == 9: SUCCESS$
+^VERIFICATION SUCCESSFUL$
+--
+--
+This test checks loop locals are correctly removed during assigns inference so
+that the assign clause is correctly inferred.

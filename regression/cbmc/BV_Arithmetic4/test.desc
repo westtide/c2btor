@@ -1,0 +1,8 @@
+CORE
+main.c
+ --unwind 32 --no-signed-overflow-check --no-undefined-shift-check
+^EXIT=0$
+^SIGNAL=0$
+^VERIFICATION SUCCESSFUL$
+--
+^warning: ignoring

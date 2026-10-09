@@ -1,0 +1,19 @@
+CORE dfcc-only
+main.c
+--dfcc main --replace-call-with-contract foo _ --arrays-uf-always --slice-formula
+^\[__CPROVER_contracts_is_fresh.assertion.\d+\] line \d+ __CPROVER_is_fresh does not conflict with other pointer predicate in assume context: SUCCESS$
+^\[__CPROVER_contracts_is_fresh.assertion.\d+\] line \d+ __CPROVER_is_fresh does not conflict with other pointer predicate in assert context: SUCCESS$
+^\[__CPROVER_contracts_pointer_equals.assertion.\d+\] line \d+ __CPROVER_pointer_equals does not conflict with other pointer predicate in assume context: SUCCESS$
+^\[__CPROVER_contracts_pointer_equals.assertion.\d+\] line \d+ __CPROVER_pointer_equals does not conflict with other pointer predicate in assert context: SUCCESS$
+^\[__CPROVER_contracts_pointer_in_range_dfcc.assertion.\d+\] line \d+ __CPROVER_pointer_in_range_dfcc does not conflict with other pointer predicate in assume context: SUCCESS$
+^\[__CPROVER_contracts_pointer_in_range_dfcc.assertion.\d+\] line \d+ __CPROVER_pointer_in_range_dfcc does not conflict with other predicate in assert context: SUCCESS$
+^EXIT=0$
+^SIGNAL=0$
+^VERIFICATION SUCCESSFUL$
+--
+--
+Tests that a same pointer can be the target of multiple pointer predicates as
+long as they do not apply at the same time.
+
+Tests all 6 pairwise combinations of is_fresh, pointer_equals,
+pointer_in_range_dfcc in mode assert-requires/assume-ensures.

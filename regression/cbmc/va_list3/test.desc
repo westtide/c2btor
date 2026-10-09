@@ -1,0 +1,11 @@
+CORE broken-smt-backend no-new-smt
+main.c
+
+^EXIT=0$
+^SIGNAL=0$
+^VERIFICATION SUCCESSFUL$
+--
+^warning: ignoring
+--
+This test only fails when using SMT solvers as back-end on Windows ("TODO
+typecast3 floatbv -> pointer", same problem as va_list3).

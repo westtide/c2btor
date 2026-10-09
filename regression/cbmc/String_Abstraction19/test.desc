@@ -1,0 +1,8 @@
+CORE
+structs.c
+--string-abstraction --no-pointer-check
+^EXIT=0$
+^SIGNAL=0$
+^VERIFICATION SUCCESSFUL$
+--
+^warning: ignoring

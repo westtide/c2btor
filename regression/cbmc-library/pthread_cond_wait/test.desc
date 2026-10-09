@@ -1,0 +1,9 @@
+CORE unix
+main.c
+--no-standard-checks --bounds-check
+^EXIT=10$
+^SIGNAL=0$
+^\*\* 1 of 3 failed
+^VERIFICATION FAILED$
+--
+^warning: ignoring

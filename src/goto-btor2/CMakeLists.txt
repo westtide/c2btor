@@ -1,0 +1,51 @@
+add_library(goto-btor2
+  heap_model.cpp
+  object_memory.cpp
+  object_copy.cpp
+  memory_capacity.cpp
+  memory_capacity.h
+  heap_model.h
+  memory_access.cpp
+  memory_access.h
+  btor2_builder.cpp
+  btor2_builder.h
+  btor2_type_utils.cpp
+  btor2_type_utils.h
+  expr_to_btor2.cpp
+  expr_to_btor2.h
+  expr_to_btor2_types.h
+  expr_to_btor2_arrays.cpp
+  expr_to_btor2_bitvec.cpp
+  expr_to_btor2_float.cpp
+  ieee754_arith.cpp
+  ieee754_math.cpp
+  expr_to_btor2_pointers.cpp
+  goto_btor2.cpp
+  goto_btor2.h
+  goto_btor2_format.cpp
+  goto_btor2_assign.cpp
+  goto_btor2_collect.cpp
+  goto_btor2_converter.h
+  goto_btor2_instructions.cpp
+  goto_btor2_unroll.cpp
+  goto_btor2_unroll.h
+  simplify_callback_targets.cpp
+  simplify_callback_targets.h
+  lower_recursive_calls.cpp
+  lower_recursive_calls.h
+  lower_float_operations.cpp
+  lower_float_operations.h
+  lower_heap_operations.cpp
+  lower_heap_operations.h
+  lower_array_operations.cpp
+  lower_array_operations.h
+)
+
+generic_includes(goto-btor2)
+
+target_link_libraries(goto-btor2
+  ansi-c
+  goto-programs
+  solvers
+  util
+)

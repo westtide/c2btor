@@ -1,0 +1,2 @@
+extern const char *CBMC_VERSION;
+extern const char *C2BTOR_VERSION;

@@ -1,0 +1,9 @@
+CORE
+nested.c
+--dfcc main --apply-loop-contracts
+^EXIT=0$
+^SIGNAL=0$
+^VERIFICATION SUCCESSFUL$
+--
+--
+We properly skip the instrumentation of both loops.

@@ -1,0 +1,9 @@
+CORE
+main.i
+--no-malloc-may-fail --64 --unwind 4 --unwinding-assertions
+^EXIT=0$
+^SIGNAL=0$
+^VERIFICATION SUCCESSFUL$
+--
+^warning: ignoring
+^CONVERSION ERROR$

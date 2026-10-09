@@ -1,0 +1,10 @@
+CORE
+main.c
+--apply-loop-contracts
+^EXIT=0$
+^SIGNAL=0$
+^\[main.\d+\] .* Check loop invariant before entry: SUCCESS$
+^VERIFICATION SUCCESSFUL$
+--
+--
+This test checks assigns h->pos is inferred correctly.

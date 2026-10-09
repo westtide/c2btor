@@ -1,0 +1,13 @@
+FUTURE
+main.c
+--localize-faults
+^EXIT=10$
+^SIGNAL=0$
+line 9 function main$
+^VERIFICATION FAILED$
+--
+--
+CBMC wrongly reports line 7 as the faulty statement when instead it should be
+line 9. The test is marked as "FUTURE" as it will sometimes pass, depending on
+what model the solver produces. It would, therefore, break our checking of
+"KNOWNBUG" tests.

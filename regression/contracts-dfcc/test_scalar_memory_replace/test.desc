@@ -1,0 +1,9 @@
+CORE dfcc-only
+main.c
+--no-malloc-may-fail --dfcc main --replace-call-with-contract foo _ --no-standard-checks
+^VERIFICATION SUCCESSFUL$
+^EXIT=0$
+^SIGNAL=0$
+--
+--
+Checks whether __CPROVER_is_fresh works properly for scalars (replace context).

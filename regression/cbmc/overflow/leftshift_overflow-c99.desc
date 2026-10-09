@@ -1,0 +1,17 @@
+CORE
+leftshift_overflow.c
+--c99
+^EXIT=10$
+^SIGNAL=0$
+^\[leftshift_overflow1\.overflow\.1\] line \d+ arithmetic overflow on signed shl in .*: FAILURE$
+^\[leftshift_overflow2\.overflow\.1\] line \d+ arithmetic overflow on signed shl in .*: SUCCESS$
+^\[leftshift_overflow4\.overflow\.2\] line \d+ arithmetic overflow on signed shl in .*: UNKNOWN$
+^\[leftshift_overflow5\.overflow\.1\] line \d+ arithmetic overflow on signed shl in .*: FAILURE$
+^\[leftshift_overflow7\.overflow\.1\] line \d+ arithmetic overflow on signed shl in .*: FAILURE$
+^\[leftshift_overflow8\.overflow\.1\] line \d+ arithmetic overflow on signed shl in .*: FAILURE$
+^\*\* 8 of \d+ failed
+^VERIFICATION FAILED$
+--
+^warning: ignoring
+^\[leftshift_overflow3\.overflow\..*\] line \d+ arithmetic overflow on signed shl in .*: .*$
+^\[leftshift_overflow6\.overflow\..*\] line \d+ arithmetic overflow on signed shl in .*: .*$

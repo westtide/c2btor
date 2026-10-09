@@ -1,0 +1,32 @@
+CORE dfcc-only
+main.c
+--dfcc main --replace-call-with-contract foo
+^\[bar.assertion.\d+\] line 35 assertion 0: FAILURE$
+^\[bar.assertion.\d+\] line 36 assertion __CPROVER_POINTER_OBJECT\(\(.*\)x\) == __CPROVER_POINTER_OBJECT\(\(.*\)a\): SUCCESS$
+^\[bar.assigns.\d+\] line 37 Check that \*x is assignable: SUCCESS$
+^\[bar.pointer_dereference.\d+\] line 37 dereference failure: pointer NULL in \*x: SUCCESS$
+^\[bar.pointer_dereference.\d+\] line 37 dereference failure: pointer invalid in \*x: SUCCESS$
+^\[bar.pointer_dereference.\d+\] line 37 dereference failure: deallocated dynamic object in \*x: SUCCESS$
+^\[bar.pointer_dereference.\d+\] line 37 dereference failure: dead object in \*x: SUCCESS$
+^\[bar.pointer_dereference.\d+\] line 37 dereference failure: pointer outside object bounds in \*x: SUCCESS$
+^\[bar.pointer_dereference.\d+\] line 37 dereference failure: invalid integer address in \*x: SUCCESS$
+^\[bar.assertion.\d+\] line 41 assertion 0: FAILURE$
+^\[bar.assertion.\d+\] line 42 assertion x == \(\(.*\)NULL\): SUCCESS$
+^\[bar.assertion.\d+\] line 43 assertion __CPROVER_POINTER_OBJECT\(\(.*\)y\) == __CPROVER_POINTER_OBJECT\(\(.*\)a\): SUCCESS$
+^\[bar.assigns.\d+\] line 44 Check that \*y is assignable: SUCCESS$
+^\[bar.pointer_dereference.\d+\] line 44 dereference failure: pointer NULL in \*y: SUCCESS$
+^\[bar.pointer_dereference.\d+\] line 44 dereference failure: pointer invalid in \*y: SUCCESS$
+^\[bar.pointer_dereference.\d+\] line 44 dereference failure: deallocated dynamic object in \*y: SUCCESS$
+^\[bar.pointer_dereference.\d+\] line 44 dereference failure: dead object in \*y: SUCCESS$
+^\[bar.pointer_dereference.\d+\] line 44 dereference failure: pointer outside object bounds in \*y: SUCCESS$
+^\[bar.pointer_dereference.\d+\] line 44 dereference failure: invalid integer address in \*y: SUCCESS$
+^EXIT=10$
+^SIGNAL=0$
+^VERIFICATION FAILED$
+--
+--
+Illustrates the behaviour of `__CPROVER_pointer_in_range` under disjunctions in assume contexts.
+The postcondition of `foo` describes a disjunction of cases: either `x` is in range of `a` and `y` is null,
+or `x` is null and `y` is in range of `a`. The function `bar` branches on `y == NULL`.
+The test succeeds if the two `assert(0)` are falsifiable, which which shows that
+both cases of the disjunction expressed in the ensures clause of `foo` are reachable.

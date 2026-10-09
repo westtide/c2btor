@@ -1,0 +1,55 @@
+if(WIN32)
+  set(is_windows true)
+else()
+  set(is_windows false)
+endif()
+
+if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "MSVC")
+  set(gcc_only -X gcc-only)
+  set(gcc_only_string "-X;gcc-only;")
+else()
+  set(gcc_only "")
+  set(gcc_only_string "")
+endif()
+
+
+add_test_pl_tests(
+    "${CMAKE_CURRENT_SOURCE_DIR}/chain.sh $<TARGET_FILE:goto-cc> $<TARGET_FILE:goto-instrument> $<TARGET_FILE:c2btor> ${is_windows} true" ${gcc_only}
+)
+
+add_test_pl_profile(
+    "contracts-non-dfcc"
+    "${CMAKE_CURRENT_SOURCE_DIR}/chain.sh $<TARGET_FILE:goto-cc> $<TARGET_FILE:goto-instrument> $<TARGET_FILE:c2btor> ${is_windows} false" ${gcc_only}
+    "-C;-X;dfcc-only;-s;non-dfcc"
+    "CORE"
+)
+
+## Enabling these causes a very significant increase in the time taken to run the regressions
+
+#add_test_pl_profile(
+#    "cbmc-z3"
+#    "${CMAKE_CURRENT_SOURCE_DIR}/chain.sh $<TARGET_FILE:goto-cc> $<TARGET_FILE:goto-instrument> '$<TARGET_FILE:c2btor> --z3' ${is_windows} true"
+#    "-C;-X;broken-smt-backend;-X;thorough-smt-backend;-X;broken-z3-backend;-X;thorough-z3-backend;${gcc_only_string}-s;z3"
+#    "CORE"
+#)
+
+#add_test_pl_profile(
+#    "cbmc-cprover-smt2"
+#    "${CMAKE_CURRENT_SOURCE_DIR}/chain.sh $<TARGET_FILE:goto-cc> $<TARGET_FILE:goto-instrument> '$<TARGET_FILE:c2btor> --cprover-smt2' ${is_windows} true"
+#    "-C;-X;broken-smt-backend;-X;thorough-smt-backend;-X;broken-cprover-smt2-backend;-X;thorough-cprover-smt2-backend;${gcc_only_string}-s;cprover-smt2"
+#    "CORE"
+#)
+
+# solver appears on the PATH in Windows already
+if(NOT "${CMAKE_SYSTEM_NAME}" STREQUAL "Windows")
+  set_property(
+    TEST "contracts-dfcc-CORE"
+    PROPERTY ENVIRONMENT
+      "PATH=$ENV{PATH}:$<TARGET_FILE_DIR:smt2_solver>"
+  )
+  set_property(
+    TEST "contracts-non-dfcc-CORE"
+    PROPERTY ENVIRONMENT
+      "PATH=$ENV{PATH}:$<TARGET_FILE_DIR:smt2_solver>"
+  )
+endif()

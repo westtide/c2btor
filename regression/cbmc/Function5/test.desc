@@ -1,0 +1,8 @@
+CORE
+main.c
+
+^SIGNAL=0$
+^EXIT=10$
+^\[.*\] .* dereference failure: pointer outside object bounds in \*p: FAILURE$
+--
+^warning: ignoring

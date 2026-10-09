@@ -1,0 +1,6 @@
+CORE
+abs.c
+--no-signed-overflow-check --function abs
+^EXIT=0$
+^SIGNAL=0$
+^VERIFICATION SUCCESSFUL$

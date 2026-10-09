@@ -1,0 +1,20 @@
+CORE dfcc-only
+main.c
+--dfcc main --enforce-contract foo
+^\[__CPROVER_contracts_car_set_insert.assertion.\d+\] line \d+ ptr NULL or writable up to size: (FAILURE|UNKNOWN)$
+^\[__CPROVER_contracts_write_set_check_assignment.assertion.\d+\] line \d+ ptr NULL or writable up to size: (FAILURE|UNKNOWN)$
+^\[foo.assigns.\d+\] line \d+ Check that \*x is assignable: (FAILURE|UNKNOWN)$
+^\[foo.pointer_dereference.\d+\] line \d+ dereference failure: pointer NULL in \*x: (FAILURE|UNKNOWN)
+^\[foo.pointer_dereference.\d+\] line \d+ dereference failure: pointer invalid in \*x: (FAILURE|UNKNOWN)$
+^\[foo.pointer_dereference.\d+\] line \d+ dereference failure: deallocated dynamic object in \*x: (FAILURE|UNKNOWN)
+^\[foo.pointer_dereference.\d+\] line \d+ dereference failure: dead object in \*x: (FAILURE|UNKNOWN)
+^\[foo.pointer_dereference.\d+\] line \d+ dereference failure: pointer outside object bounds in \*x: (FAILURE|UNKNOWN)
+^\[foo.pointer_dereference.\d+\] line \d+ dereference failure: invalid integer address in \*x: (FAILURE|UNKNOWN)$
+^EXIT=10$
+^SIGNAL=0$
+^VERIFICATION FAILED$
+--
+--
+This test checks that when `__CPROVER_is_fresh` is used in disjunctions,
+the program accepts models where `__CPROVER_is_fresh` evaluates to false
+and no object gets allocated, and pointers remain invalid.

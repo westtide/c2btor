@@ -1,0 +1,17 @@
+CORE thorough-smt-backend no-new-smt
+main.c
+--no-malloc-may-fail
+^EXIT=10$
+^SIGNAL=0$
+\[\(.*\)i2\]: FAILURE
+dest\[\(.*\)j2\]: FAILURE
+payload\[\(.*\)[kl]2\]: FAILURE
+\*\* 7 of [0-9]+ failed
+--
+^warning: ignoring
+\[\(.*\)i\]: FAILURE
+dest\[\(.*\)j\]: FAILURE
+payload\[\(.*\)[kl]\]: FAILURE
+--
+Appears to take Z3 more than 10 minutes to solve, and approximately 500 seconds
+when using the in-tree SMT solver.

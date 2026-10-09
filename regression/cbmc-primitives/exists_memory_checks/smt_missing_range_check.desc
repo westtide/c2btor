@@ -1,0 +1,18 @@
+KNOWNBUG smt-backend no-new-smt
+smt_missing_range_check.c
+--no-malloc-may-fail --pointer-check -z3
+^EXIT=10$
+^SIGNAL=0$
+^VERIFICATION FAILED$
+^\[main\.assertion\.1\] line \d assertion __CPROVER_exists \{ int i; a\[i\] == i \*i \}: UNKNOWN$
+^\[main\.pointer_dereference\.11\] line \d dereference failure: pointer outside object bounds in a\[(\(signed (long|long long) int\))?i\]: FAILURE$
+--
+--
+Check that memory checks fail for pointer dereferences inside an existential
+quantifier, for out of bounds memory access, when using the smt backend and
+the range of the index is unbound. Note that this test is not expected to work
+with the SAT backend at the time of writing, as the SAT backend does not support
+quantifiers in this form.
+
+Neither Z3 nor CVC5 currently return complete models, and Bitwuzla does not
+complete in more than 5 minutes.
