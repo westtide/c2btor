@@ -13,11 +13,6 @@ C2Btor 是一款 C 语言程序验证工具。它将 C 程序转换为硬件模�
 - CMake
 - Flex、Bison、Git、Perl 和 patch
 
-Ubuntu/Debian 可运行：
-
-```sh
-apt-get install build-essential cmake flex bison patch git perl
-```
 
 ## 编译
 
