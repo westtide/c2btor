@@ -8,15 +8,9 @@ C2Btor is a C program verification tool. It converts C programs into BTOR2, a ha
 
 ## Dependencies
 
-- A C++17 compiler and a C preprocessor, such as GCC/G++.
+- A C++17 compiler, such as GCC.
 - CMake 3.16+.
 - Flex, Bison, Git, Perl, and patch.
-
-On Ubuntu/Debian:
-
-```sh
-apt-get install build-essential cmake flex bison patch git perl
-```
 
 ## Build
 
@@ -24,7 +18,7 @@ apt-get install build-essential cmake flex bison patch git perl
 # Configure the build directory
 cmake -S . -B build
 
-# Build C2BTOR and its dependencies with up to 8 parallel jobs
+# Build C2BTOR
 cmake --build build --target c2btor -j8
 
 build/bin/c2btor --version
@@ -36,10 +30,10 @@ Tests are disabled by default.
 
 ```sh
 build/bin/c2btor program.c --goto-btor2 --inline --32 \
-  --array bv --goto-btor2-out model.btor2
+  --array array --goto-btor2-out model.btor2
 ```
 
-The input program should contain assertions or error-function calls. The converter defaults to object memory with BV storage. Use `--array array` to generate Array models for backends that support arrays.
+The input program should contain assertions or error-function calls. 
 
 | Option | Purpose |
 |---|---|
