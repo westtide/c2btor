@@ -10,6 +10,241 @@ Author: Daniel Kroening, kroening@kroening.com
 
 #include "c_storage_spec.h"
 
+#include <algorithm>
+#include <fstream>
+#include <optional>
+#include <sstream>
+
+namespace
+{
+// This restricted correspondence preserves every non-space byte and whether
+// an internal whitespace boundary exists. It never joins/splits C tokens and
+// never edits a string/character literal, escape or comment. Unlike stripping
+// whitespace, it distinguishes e.g. "+ +" from "++" and "a b" from "ab".
+std::optional<std::size_t> match_space_run_column(
+  const std::string &source, const std::string &preprocessed,
+  std::size_t pp_column)
+{
+  if(pp_column == 0 || pp_column > preprocessed.size() ||
+     preprocessed[pp_column - 1] != ')')
+    return {};
+  auto source_index = source.find_first_not_of(" \t");
+  auto pp_index = preprocessed.find_first_not_of(" \t");
+  if(source_index == std::string::npos || pp_index == std::string::npos)
+    return {};
+  for(const auto &[text, begin] :
+      {std::pair<const std::string &, std::size_t>{source, source_index},
+       std::pair<const std::string &, std::size_t>{preprocessed, pp_index}})
+  {
+    if(text.find_first_of("\"'\\", begin) != std::string::npos ||
+       text.find("/*", begin) != std::string::npos ||
+       text.find("//", begin) != std::string::npos ||
+       std::any_of(text.begin() + begin, text.end(), [](unsigned char c) {
+         return c < 32 || c >= 128;
+       }))
+      return {};
+  }
+  std::optional<std::size_t> source_column;
+  while(source_index < source.size() && pp_index < preprocessed.size())
+  {
+    if(source[source_index] == ' ' || preprocessed[pp_index] == ' ')
+    {
+      if(source[source_index] != ' ' || preprocessed[pp_index] != ' ')
+        return {};
+      while(source_index < source.size() && source[source_index] == ' ')
+        ++source_index;
+      while(pp_index < preprocessed.size() && preprocessed[pp_index] == ' ')
+        ++pp_index;
+      continue;
+    }
+    if(source[source_index] != preprocessed[pp_index])
+      return {};
+    if(pp_index + 1 == pp_column)
+      source_column = source_index + 1;
+    ++source_index;
+    ++pp_index;
+  }
+  // Trailing spaces cannot introduce a token. All other remaining bytes must
+  // match; a correct closing token alone does not certify the complete line.
+  while(source_index < source.size() && source[source_index] == ' ')
+    ++source_index;
+  while(pp_index < preprocessed.size() && preprocessed[pp_index] == ' ')
+    ++pp_index;
+  return source_index == source.size() && pp_index == preprocessed.size()
+           ? source_column : std::optional<std::size_t>{};
+}
+}
+
+void ansi_c_parsert::capture_witness_tokens(const std::string &preprocessed)
+{
+  witness_tokens_enabled = true;
+  witness_line = witness_token_line = 0;
+  witness_column = witness_token_column = 1;
+  witness_preprocessed_lines.clear();
+  witness_source_lines.clear();
+  std::istringstream input(preprocessed);
+  std::string line;
+  while(std::getline(input, line))
+  {
+    // YY_INPUT discards carriage returns. Only normal CRLF is supported for
+    // source certification; an embedded CR in an original line fails equality.
+    line.erase(std::remove(line.begin(), line.end(), '\r'), line.end());
+    witness_preprocessed_lines.push_back(std::move(line));
+  }
+}
+
+void ansi_c_parsert::witness_scan_token(const char *text, std::size_t length)
+{
+  if(!witness_tokens_enabled)
+    return;
+  witness_token_line = witness_line;
+  witness_token_column = witness_column;
+  for(std::size_t i = 0; i < length; ++i)
+  {
+    if(text[i] == '\n')
+    {
+      ++witness_line;
+      witness_column = 1;
+    }
+    else
+      ++witness_column;
+  }
+}
+
+void ansi_c_parsert::witness_rewind_token(
+  const char *text, std::size_t retained)
+{
+  if(!witness_tokens_enabled)
+    return;
+  witness_line = witness_token_line;
+  witness_column = witness_token_column;
+  // flex yyless returns the remaining characters to the scanner. Recount
+  // only the retained prefix, including the INITIAL/STRING_LITERAL yyless(0).
+  for(std::size_t i = 0; i < retained; ++i)
+  {
+    if(text[i] == '\n')
+    {
+      ++witness_line;
+      witness_column = 1;
+    }
+    else
+      ++witness_column;
+  }
+}
+
+void ansi_c_parsert::witness_closing_token(exprt &token)
+{
+  if(!witness_tokens_enabled)
+    return;
+  auto &location = token.add_source_location();
+  location.set("c2btor_pp_token_line", std::to_string(witness_token_line));
+  location.set("c2btor_pp_token_column", std::to_string(witness_token_column));
+}
+
+void ansi_c_parsert::witness_call_return(
+  exprt &function, exprt &call, const exprt &closing)
+{
+  if(!witness_tokens_enabled)
+    return;
+  const auto unavailable = [&](const std::string &reason) {
+    for(auto *expr : {&function, &call})
+    {
+      auto &location = expr->add_source_location();
+      location.remove("c2btor_call_return_file");
+      location.remove("c2btor_call_return_line");
+      location.remove("c2btor_call_return_column");
+      location.remove("c2btor_call_return_evidence");
+      location.set("c2btor_call_return_unavailable", reason);
+    }
+  };
+  unavailable("missing-frontend-token-coordinate");
+  const auto &end = closing.source_location();
+  const auto &file = id2string(end.get_file());
+  if(file.empty() || file.front() == '<' ||
+     end.get("c2btor_pp_token_line").empty() ||
+     end.get("c2btor_pp_token_column").empty() || end.get_line().empty())
+    return;
+  const auto physical_line = std::stoull(id2string(end.get("c2btor_pp_token_line")));
+  auto column = std::stoull(id2string(end.get("c2btor_pp_token_column")));
+  const auto source_line = std::stoull(id2string(end.get_line()));
+  if(physical_line >= witness_preprocessed_lines.size() || source_line == 0)
+  {
+    unavailable("preprocessed-line-out-of-range");
+    return;
+  }
+  auto cached = witness_source_lines.find(file);
+  if(cached == witness_source_lines.end())
+  {
+    std::vector<std::string> lines;
+    std::ifstream input(file);
+    std::string line;
+    while(std::getline(input, line))
+    {
+      if(!line.empty() && line.back() == '\r')
+        line.pop_back();
+      lines.push_back(std::move(line));
+    }
+    cached = witness_source_lines.emplace(file, std::move(lines)).first;
+  }
+  if(source_line > cached->second.size())
+  {
+    unavailable("original-source-line-unavailable");
+    return;
+  }
+  const auto &source = cached->second[source_line - 1];
+  const auto &preprocessed = witness_preprocessed_lines[physical_line];
+  std::string evidence =
+    "frontend closing-paren token; preprocessed line exactly matches original ASCII source";
+  // Preprocessor token coordinates are not original C coordinates in general.
+  // A different leading space/tab prefix is a provable coordinate translation
+  // only when the complete remaining line is byte-identical. Internal whitespace,
+  // comments, macros and all token changes still prevent certification.
+  if(source != preprocessed)
+  {
+    auto source_prefix = source.find_first_not_of(" \t");
+    auto pp_prefix = preprocessed.find_first_not_of(" \t");
+    if(source_prefix == std::string::npos)
+      source_prefix = source.size();
+    if(pp_prefix == std::string::npos)
+      pp_prefix = preprocessed.size();
+    if(source.substr(source_prefix) == preprocessed.substr(pp_prefix) &&
+       column > pp_prefix && column <= preprocessed.size())
+    {
+      column = source_prefix + (column - pp_prefix);
+      evidence = "frontend closing-paren token; only leading horizontal whitespace differs from original ASCII source";
+    }
+    else if(const auto matched = match_space_run_column(source, preprocessed, column))
+    {
+      column = *matched;
+      evidence = "frontend closing-paren token; ASCII space-run widths differ with identical bytes and preserved internal whitespace boundaries";
+    }
+    else
+    {
+      unavailable("preprocessed-line-differs-from-source");
+      return;
+    }
+  }
+  if(column == 0 || column > source.size() || source[column - 1] != ')')
+  {
+    unavailable("original-closing-token-mismatch");
+    return;
+  }
+  if(std::any_of(source.begin(), source.end(), [](unsigned char c) { return c >= 128; }))
+  {
+    unavailable("non-ascii-source-line");
+    return;
+  }
+  for(auto *expr : {&function, &call})
+  {
+    auto &location = expr->add_source_location();
+    location.remove("c2btor_call_return_unavailable");
+    location.set("c2btor_call_return_file", file);
+    location.set("c2btor_call_return_line", std::to_string(source_line));
+    location.set("c2btor_call_return_column", std::to_string(column));
+    location.set("c2btor_call_return_evidence", evidence);
+  }
+}
+
 ansi_c_id_classt ansi_c_parsert::lookup(
   const irep_idt &base_name,
   irep_idt &identifier, // output

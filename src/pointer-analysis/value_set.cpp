@@ -562,7 +562,7 @@ void value_sett::get_value_set_rec(
                                    ? remove_level_2(to_ssa_expr(expr))
                                    : to_symbol_expr(expr);
     auto entry_index =
-      get_index_of_symbol(expr_l1.get_identifier(), expr.type(), suffix, ns);
+      get_index_of_symbol(expr_l1.identifier(), expr.type(), suffix, ns);
 
     if(entry_index.has_value())
       make_union(dest, find_entry(*entry_index)->object_map);
@@ -1675,7 +1675,7 @@ void value_sett::assign_rec(
   {
     const symbol_exprt lhs_l1 =
       is_ssa_expr(lhs) ? remove_level_2(to_ssa_expr(lhs)) : to_symbol_expr(lhs);
-    const irep_idt &identifier = lhs_l1.get_identifier();
+    const irep_idt &identifier = lhs_l1.identifier();
 
     update_entry(
       entryt{identifier, suffix}, lhs.type(), values_rhs, add_to_sets);
@@ -1955,6 +1955,13 @@ void value_sett::apply_code_rec(
   else if(statement == ID_havoc_object)
   {
   }
+  else if(id2string(statement).rfind("c2btor_", 0) == 0)
+  {
+    // C2Btor heap-lowering intrinsics (c2btor_deallocate/c2btor_copy_check):
+    // they only dereference or retire objects and never assign a pointer
+    // variable, so the pointer value set is unchanged. Without this case
+    // the dependence-graph pass (goto-btor2 property slicing) would throw.
+  }
   else
   {
     UNIMPLEMENTED_FEATURE(
@@ -2071,6 +2078,5 @@ void value_sett::erase_symbol(
   const symbol_exprt &symbol_expr,
   const namespacet &ns)
 {
-  erase_symbol_rec(
-    symbol_expr.type(), id2string(symbol_expr.get_identifier()), ns);
+  erase_symbol_rec(symbol_expr.type(), id2string(symbol_expr.identifier()), ns);
 }

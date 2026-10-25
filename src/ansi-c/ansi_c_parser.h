@@ -157,8 +157,22 @@ public:
   /// the current CPROVER pragma stack
   void set_pragma_cprover();
 
+  // Optional C2Btor map metadata. Physical lexer positions are separate from
+  // parser error columns, and are never a source coordinate without checking
+  // the complete preprocessed line against its original file/line.
+  void capture_witness_tokens(const std::string &preprocessed);
+  void witness_scan_token(const char *text, std::size_t length);
+  void witness_rewind_token(const char *text, std::size_t retained);
+  void witness_closing_token(exprt &token);
+  void witness_call_return(exprt &function, exprt &call, const exprt &closing);
+
 private:
   std::list<std::map<const irep_idt, bool>> pragma_cprover_stack;
+  bool witness_tokens_enabled = false;
+  std::vector<std::string> witness_preprocessed_lines;
+  std::map<std::string, std::vector<std::string>> witness_source_lines;
+  std::size_t witness_line = 0, witness_column = 1;
+  std::size_t witness_token_line = 0, witness_token_column = 1;
 };
 
 void ansi_c_scanner_init(ansi_c_parsert &);

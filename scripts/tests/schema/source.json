@@ -1,0 +1,12 @@
+{
+  "tag": "2.1.2",
+  "commit": "2e4a27b372930e931dbb601907eeba1267a724cd",
+  "url": "https://gitlab.com/sosy-lab/benchmarking/sv-witnesses",
+  "sha256": {
+    "violation-witness-schema.yml": "8f6e0b71d2cc5e3456765528ffcbd735f8ecfe1d792b1166c5d8a8694c3188fd",
+    "common/location.yml": "d0c7afbb70cd420d9deaa3449cfeeec2eb9dfd12582ab11a33b4b49d768655f6",
+    "common/metadata.yml": "2e5974e65bb30ca33f3b52dbd33a20962f2300e902dad0f37690535cb73ae86a",
+    "archive/v2.0/violation-witness-2.0-schema.yml": "ea7cc46452dfa730492bf1ba0ce534bc89b1073a5dc9534f3398273a0ea2f9e3",
+    "correctness-witness-schema.yml": "4ec8240c795eb405c1157ef67d483b9a8b4370c738dd9b7017bbca38cf94a4d9"
+  }
+}

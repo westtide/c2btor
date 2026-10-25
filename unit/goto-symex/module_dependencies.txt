@@ -1,6 +1,0 @@
-analyses
-goto-programs
-goto-symex
-pointer-analysis
-testing-utils
-util

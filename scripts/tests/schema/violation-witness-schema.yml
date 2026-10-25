@@ -1,0 +1,124 @@
+---
+"$schema": https://json-schema.org/draft/2020-12/schema
+"$id": "https://gitlab.com/sosy-lab/benchmarking/sv-witnesses/schemas/violation"
+title: Format for Violation Witnesses, version 2.1
+type: array
+description: |
+  This schema describes the YAML format for violation witnesses.
+  A violation witness can only be syntactically valid if it fulfills the below syntactical requirements.
+items:
+  type: object
+  required:
+  - entry_type
+  - metadata
+  - content
+  properties:
+    entry_type:
+      type: string
+      enum:
+      - violation_sequence
+    metadata:
+        $ref: "https://gitlab.com/sosy-lab/benchmarking/sv-witnesses/schemas/common/metadata"
+    content:
+      type: array
+      description: |
+        The content represents the semantical content of the violation witness.
+      items:
+        type: object
+        required:
+        - segment
+        properties:
+          segment:
+            type: array
+            items:
+              type: object
+              required:
+              - waypoint
+              properties:
+                waypoint:
+                  type: object
+                  required:
+                  - type
+                  - action
+                  - location
+                  properties:
+                    type:
+                      type: string
+                      enum:
+                      - assumption
+                      - target
+                      - function_enter
+                      - function_return
+                      - branching
+                    constraint:
+                      type: object
+                      required:
+                      - value
+                      properties:
+                        value:
+                          type: string
+                        format:
+                          type: string
+                          enum:
+                          - c_expression
+                          - ext_c_expression
+                          - acsl_expression # Deprecated, use ext_c_expression instead
+                    location:
+                      $ref: "https://gitlab.com/sosy-lab/benchmarking/sv-witnesses/schemas/common/location"
+                    action:
+                      enum:
+                      - follow
+                      - avoid
+                      - cycle
+                  allOf:
+                    - if:
+                        properties:
+                          type: { const: target }
+                        required: [type]
+                      then:
+                        properties:
+                          action: { const: follow }
+                        required: [action]
+                    - if:
+                        properties:
+                          type: { const: assumption }
+                        required: [type]
+                      then:
+                        properties:
+                          constraint:
+                            type: object
+                            properties:
+                              format: { const: c_expression }
+                            required: [format]
+                        required: [constraint]
+                    - if:
+                        properties:
+                          type: { const: function_return }
+                        required: [type]
+                      then:
+                        properties:
+                          constraint:
+                            type: object
+                            properties:
+                              format: { enum: [ext_c_expression, acsl_expression] }
+                            required: [format]
+                        required: [constraint]
+                    - if:
+                        properties:
+                          type: { enum: [target, function_enter] }
+                        required: [type]
+                      then:
+                        properties:
+                          constraint: { not: {} }
+                    - if:
+                        properties:
+                          type: { const: branching }
+                        required: [type]
+                      then:
+                        properties:
+                          constraint:
+                            type: object
+                            properties:
+                              format: { not: {} }
+                        required: [constraint]
+additionalProperties: false

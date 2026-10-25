@@ -60,9 +60,21 @@ public:
   constexpr operator int() const { return no; }
   #endif
 
+  // The const char* and const std::string& constructors below are
+  // semantically equivalent to the std::string_view one (both implicitly
+  // convert to std::string_view); they are retained only so that overload
+  // resolution prefers them and avoids an extra conversion, not for any
+  // distinct behaviour.
+
   // this one is not safe for static objects
   // NOLINTNEXTLINE(runtime/explicit)
   dstringt(const char *s):no(get_string_container()[s])
+  {
+  }
+
+  // this one is not safe for static objects
+  // NOLINTNEXTLINE(runtime/explicit)
+  dstringt(std::string_view s) : no(get_string_container()[s])
   {
   }
 
@@ -79,7 +91,7 @@ public:
 #ifdef __GNUC__
   constexpr
 #endif
-    dstringt(dstringt &&other)
+    dstringt(dstringt &&other) noexcept
     : no(other.no)
   {
   }
@@ -102,7 +114,7 @@ public:
   }
 
   /// equivalent of as_string().starts_with(s)
-  bool starts_with(const std::string &prefix) const
+  bool starts_with(std::string_view prefix) const
   {
     return as_string().compare(0, prefix.size(), prefix) == 0;
   }
@@ -167,7 +179,7 @@ public:
 
   /// Move assignment. There is no need and no point in actually destroying the
   /// source object \p other, this is effectively just an assignment.
-  dstringt &operator=(dstringt &&other)
+  dstringt &operator=(dstringt &&other) noexcept
   {
     no = other.no;
     return *this;

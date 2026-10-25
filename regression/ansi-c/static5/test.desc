@@ -1,8 +1,0 @@
-CORE
-main.c
---verbosity 10
-^Removing unused symbol
-^EXIT=0$
-^SIGNAL=0$
---
-^Removing unused symbol vtable_0$

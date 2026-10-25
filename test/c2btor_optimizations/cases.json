@@ -1,0 +1,17 @@
+{
+  "scope": "Fixed-input finite BTOR2 simulation; no model checking or unbounded safety claim",
+  "cases": [
+    {"name": "integer-wrap", "source": "integer_wrap.c", "inputs": [4294967295]},
+    {"name": "branch-then", "source": "branch.c", "inputs": [1, 5]},
+    {"name": "branch-else", "source": "branch.c", "inputs": [0, 5]},
+    {"name": "loop-reachability", "source": "loop.c", "inputs": [4]},
+    {"name": "assert-before-assume", "source": "assert_before_assume.c", "inputs": [7], "target": "optimization-prefix-failure", "constraint_after_target": true},
+    {"name": "nondet-independent", "source": "nondet_independent.c", "inputs": [5, 9]},
+    {"name": "nondet-shared", "source": "nondet_shared.c", "inputs": [5]},
+    {"name": "array-init", "source": "array_init.c", "inputs": [1]},
+    {"name": "pointer-alias-a", "source": "pointer_alias.c", "inputs": [1]},
+    {"name": "pointer-alias-b", "source": "pointer_alias.c", "inputs": [0]},
+    {"name": "write-read", "source": "write_read.c", "inputs": [1]},
+    {"name": "unused-capacity", "source": "unused_capacity.c", "inputs": [], "architectures": ["32"], "conversion_rejections": [{"with_flag": "--goto-btor2-no-optimize-state", "configs": ["bv"], "message": "Unsupported byte memory: --memory object capacity exceeds representable width"}], "forbidden_state_symbols": ["unused"]}
+  ]
+}

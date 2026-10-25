@@ -184,7 +184,7 @@ int yyansi_cerror(const std::string &error);
 %token TOK_CW_VAR_ARG_TYPEOF "_var_arg_typeof"
 %token TOK_BUILTIN_VA_ARG "__builtin_va_arg"
 %token TOK_GCC_BUILTIN_TYPES_COMPATIBLE_P "__builtin_types_compatible_p"
-%token TOK_CLANG_BUILTIN_CONVERTVECTOR "__builtin_convertvector"
+%token TOK_GCC_BUILTIN_HAS_ATTRIBUTE "__builtin_has_attribute"%token TOK_CLANG_BUILTIN_CONVERTVECTOR "__builtin_convertvector"
 %token TOK_OFFSETOF    "__offsetof"
 %token TOK_ALIGNOF     "__alignof__"
 %token TOK_MSC_TRY     "__try"
@@ -448,6 +448,26 @@ gcc_builtin_expressions:
           subtypes[0].swap(parser_stack($3));
           subtypes[1].swap(parser_stack($5));
         }
+        | TOK_GCC_BUILTIN_HAS_ATTRIBUTE '('
+           assignment_expression ',' identifier_or_typedef_name ')'
+        {
+          // __builtin_has_attribute(expr, attr): the second operand is a
+          // bare attribute name (e.g. nonstring).  CBMC does not track all
+          // GCC attributes, so we discard the name and yield a constant in
+          // the typecheck phase (see c_typecheck_expr).
+          $$=$1;
+          parser_stack($$).id(ID_gcc_builtin_has_attribute);
+          mto($$, $3);
+        }
+        | TOK_GCC_BUILTIN_HAS_ATTRIBUTE '('
+           assignment_expression ',' identifier_or_typedef_name '(' argument_expression_list ')' ')'
+        {
+          // attribute-with-arguments form, e.g. counted_by(n); arguments
+          // are discarded along with the name.
+          $$=$1;
+          parser_stack($$).id(ID_gcc_builtin_has_attribute);
+          mto($$, $3);
+        }
         ;
 
 clang_builtin_expressions:
@@ -587,6 +607,8 @@ postfix_expression:
           to_binary_expr(side_effect).op0().swap(parser_stack($1));
           to_binary_expr(side_effect).op1().clear();
           to_binary_expr(side_effect).op1().id(ID_arguments);
+          PARSER.witness_call_return(
+            to_binary_expr(side_effect).op0(), side_effect, parser_stack($3));
         }
         | postfix_expression '(' argument_expression_list ')'
         { $$=$2;
@@ -597,6 +619,8 @@ postfix_expression:
           to_binary_expr(side_effect).op0().swap(parser_stack($1));
           to_binary_expr(side_effect).op1().swap(parser_stack($3));
           to_binary_expr(side_effect).op1().id(ID_arguments);
+          PARSER.witness_call_return(
+            to_binary_expr(side_effect).op0(), side_effect, parser_stack($4));
         }
         | postfix_expression '.' member_name
         { $$=$2;
@@ -1101,18 +1125,21 @@ declaring_list:
         | TOK_GCC_AUTO_TYPE declarator
           post_declarator_attributes_opt '=' initializer
         {
-          // handled as typeof(initializer)
-          parser_stack($1).id(ID_typeof);
-          parser_stack($1).copy_to_operands(parser_stack($5));
-
-          $2=merge($3, $2);
-
-          // the symbol has to be visible during initialization
-          init($$, ID_declaration);
-          parser_stack($$).type().swap(parser_stack($1));
-          PARSER.add_declarator(parser_stack($$), parser_stack($2));
-          // add the initializer
-          to_ansi_c_declaration(parser_stack($$)).add_initializer(parser_stack($5));
+          // __auto_type var = init; handled as typeof(init) var = init;
+          // Shared logic with the qualified production below lives in
+          // new_auto_type_declaration(); keep the two in sync.
+          new_auto_type_declaration($$, $1, $2, $3, $5, nullptr);
+        }
+        | type_qualifier_list TOK_GCC_AUTO_TYPE declarator
+          post_declarator_attributes_opt '=' initializer
+        {
+          // Qualified __auto_type: 'const/volatile/... __auto_type
+          // var = initializer;' is equivalent to
+          // '<qualifiers> typeof(initializer) var = initializer;'.
+          // Shared logic with the unqualified production above lives in
+          // new_auto_type_declaration(); the qualifier list is merged into
+          // the typeof type there.
+          new_auto_type_declaration($$, $2, $3, $4, $6, &$1);
         }
         | declaring_list ',' gcc_type_attribute_opt declarator
           post_declarator_attributes_opt

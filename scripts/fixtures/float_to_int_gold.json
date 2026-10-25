@@ -1,0 +1,258 @@
+{
+  "scope": "CBMC bit-level float/double to signed/unsigned 32-bit integer behavior; invalid C conversions are not asserted to have a C-defined result.",
+  "reference": "CBMC 6.7.1 float_utilst::to_integer, captured through c2btor plain BMC on 2026-10-11 with --no-simplify --no-propagation.",
+  "cases": [
+    {
+      "float_width": 32,
+      "name": "positive_zero",
+      "input_hex": "0x00000000",
+      "signed_hex": "0x00000000",
+      "unsigned_hex": "0x00000000"
+    },
+    {
+      "float_width": 32,
+      "name": "negative_zero",
+      "input_hex": "0x80000000",
+      "signed_hex": "0x00000000",
+      "unsigned_hex": "0x00000000"
+    },
+    {
+      "float_width": 32,
+      "name": "positive_min_subnormal",
+      "input_hex": "0x00000001",
+      "signed_hex": "0x00000000",
+      "unsigned_hex": "0x00000000"
+    },
+    {
+      "float_width": 32,
+      "name": "negative_min_subnormal",
+      "input_hex": "0x80000001",
+      "signed_hex": "0x00000000",
+      "unsigned_hex": "0x00000000"
+    },
+    {
+      "float_width": 32,
+      "name": "max_subnormal",
+      "input_hex": "0x007fffff",
+      "signed_hex": "0x00000000",
+      "unsigned_hex": "0x00000000"
+    },
+    {
+      "float_width": 32,
+      "name": "min_normal",
+      "input_hex": "0x00800000",
+      "signed_hex": "0x00000000",
+      "unsigned_hex": "0x00000000"
+    },
+    {
+      "float_width": 32,
+      "name": "positive_one_and_half",
+      "input_hex": "0x3fc00000",
+      "signed_hex": "0x00000001",
+      "unsigned_hex": "0x00000001"
+    },
+    {
+      "float_width": 32,
+      "name": "negative_one_and_half",
+      "input_hex": "0xbfc00000",
+      "signed_hex": "0xffffffff",
+      "unsigned_hex": "0x00000001"
+    },
+    {
+      "float_width": 32,
+      "name": "signed_max_truncation",
+      "input_hex": "0x4effffff",
+      "signed_hex": "0x7fffff80",
+      "unsigned_hex": "0x7fffff80"
+    },
+    {
+      "float_width": 32,
+      "name": "signed_min_truncation",
+      "input_hex": "0xcf000000",
+      "signed_hex": "0x80000000",
+      "unsigned_hex": "0x80000000"
+    },
+    {
+      "float_width": 32,
+      "name": "signed_upper_overflow",
+      "input_hex": "0x4f000000",
+      "signed_hex": "0x80000000",
+      "unsigned_hex": "0x80000000"
+    },
+    {
+      "float_width": 32,
+      "name": "unsigned_max_truncation",
+      "input_hex": "0x4f7fffff",
+      "signed_hex": "0xffffff00",
+      "unsigned_hex": "0xffffff00"
+    },
+    {
+      "float_width": 32,
+      "name": "unsigned_upper_overflow",
+      "input_hex": "0x4f800000",
+      "signed_hex": "0x00000000",
+      "unsigned_hex": "0x00000000"
+    },
+    {
+      "float_width": 32,
+      "name": "max_finite",
+      "input_hex": "0x7f7fffff",
+      "signed_hex": "0x00000000",
+      "unsigned_hex": "0x00000000"
+    },
+    {
+      "float_width": 32,
+      "name": "positive_infinity",
+      "input_hex": "0x7f800000",
+      "signed_hex": "0x00000000",
+      "unsigned_hex": "0x00000000"
+    },
+    {
+      "float_width": 32,
+      "name": "negative_infinity",
+      "input_hex": "0xff800000",
+      "signed_hex": "0x00000000",
+      "unsigned_hex": "0x00000000"
+    },
+    {
+      "float_width": 32,
+      "name": "quiet_nan_payload",
+      "input_hex": "0x7fc00001",
+      "signed_hex": "0x00000000",
+      "unsigned_hex": "0x00000000"
+    },
+    {
+      "float_width": 32,
+      "name": "signaling_nan_payload",
+      "input_hex": "0x7f800001",
+      "signed_hex": "0x00000000",
+      "unsigned_hex": "0x00000000"
+    },
+    {
+      "float_width": 64,
+      "name": "positive_zero",
+      "input_hex": "0x0000000000000000",
+      "signed_hex": "0x00000000",
+      "unsigned_hex": "0x00000000"
+    },
+    {
+      "float_width": 64,
+      "name": "negative_zero",
+      "input_hex": "0x8000000000000000",
+      "signed_hex": "0x00000000",
+      "unsigned_hex": "0x00000000"
+    },
+    {
+      "float_width": 64,
+      "name": "positive_min_subnormal",
+      "input_hex": "0x0000000000000001",
+      "signed_hex": "0x00000000",
+      "unsigned_hex": "0x00000000"
+    },
+    {
+      "float_width": 64,
+      "name": "negative_min_subnormal",
+      "input_hex": "0x8000000000000001",
+      "signed_hex": "0x00000000",
+      "unsigned_hex": "0x00000000"
+    },
+    {
+      "float_width": 64,
+      "name": "max_subnormal",
+      "input_hex": "0x000fffffffffffff",
+      "signed_hex": "0x00000000",
+      "unsigned_hex": "0x00000000"
+    },
+    {
+      "float_width": 64,
+      "name": "min_normal",
+      "input_hex": "0x0010000000000000",
+      "signed_hex": "0x00000000",
+      "unsigned_hex": "0x00000000"
+    },
+    {
+      "float_width": 64,
+      "name": "positive_one_and_half",
+      "input_hex": "0x3ff8000000000000",
+      "signed_hex": "0x00000001",
+      "unsigned_hex": "0x00000001"
+    },
+    {
+      "float_width": 64,
+      "name": "negative_one_and_half",
+      "input_hex": "0xbff8000000000000",
+      "signed_hex": "0xffffffff",
+      "unsigned_hex": "0x00000001"
+    },
+    {
+      "float_width": 64,
+      "name": "signed_max_truncation",
+      "input_hex": "0x41dffffffff00000",
+      "signed_hex": "0x7fffffff",
+      "unsigned_hex": "0x7fffffff"
+    },
+    {
+      "float_width": 64,
+      "name": "signed_min_truncation",
+      "input_hex": "0xc1e0000000180000",
+      "signed_hex": "0x80000000",
+      "unsigned_hex": "0x80000000"
+    },
+    {
+      "float_width": 64,
+      "name": "signed_upper_overflow",
+      "input_hex": "0x41e0000000000000",
+      "signed_hex": "0x80000000",
+      "unsigned_hex": "0x80000000"
+    },
+    {
+      "float_width": 64,
+      "name": "unsigned_max_truncation",
+      "input_hex": "0x41effffffff80000",
+      "signed_hex": "0xffffffff",
+      "unsigned_hex": "0xffffffff"
+    },
+    {
+      "float_width": 64,
+      "name": "unsigned_upper_overflow",
+      "input_hex": "0x41f0000000000000",
+      "signed_hex": "0x00000000",
+      "unsigned_hex": "0x00000000"
+    },
+    {
+      "float_width": 64,
+      "name": "max_finite",
+      "input_hex": "0x7fefffffffffffff",
+      "signed_hex": "0x00000000",
+      "unsigned_hex": "0x00000000"
+    },
+    {
+      "float_width": 64,
+      "name": "positive_infinity",
+      "input_hex": "0x7ff0000000000000",
+      "signed_hex": "0x00000000",
+      "unsigned_hex": "0x00000000"
+    },
+    {
+      "float_width": 64,
+      "name": "negative_infinity",
+      "input_hex": "0xfff0000000000000",
+      "signed_hex": "0x00000000",
+      "unsigned_hex": "0x00000000"
+    },
+    {
+      "float_width": 64,
+      "name": "quiet_nan_payload",
+      "input_hex": "0x7ff8000000000001",
+      "signed_hex": "0x00000000",
+      "unsigned_hex": "0x00000000"
+    },
+    {
+      "float_width": 64,
+      "name": "signaling_nan_payload",
+      "input_hex": "0x7ff0000000000001",
+      "signed_hex": "0x00000000",
+      "unsigned_hex": "0x00000000"
+    }
+  ]
+}

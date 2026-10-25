@@ -192,7 +192,7 @@ static array_exprt bv_to_array_expr(
   }
   DATA_INVARIANT(
     !num_elements.has_value() || !subtype_bits.has_value() ||
-      *subtype_bits * *num_elements == total_bits,
+      *num_elements == 0 || *subtype_bits * *num_elements == total_bits,
     "subtype width times array size should be total bitvector width");
 
   exprt::operandst operands;
@@ -509,6 +509,19 @@ static exprt unpack_array_vector_no_known_bounds(
   const exprt array_vector_size = src.type().id() == ID_vector
                                     ? to_vector_type(src.type()).size()
                                     : to_array_type(src.type()).size();
+
+  if(array_vector_size.is_nil())
+  {
+    // The source array/vector has no statically known size (an incomplete
+    // type whose extent is genuinely unknown here, e.g. an extern array
+    // declared without a bound). Represent it as a zero-length comprehension;
+    // any byte access into it is then out of bounds and becomes nondet/fails,
+    // which is the behaviour the extern6 regression exercises.
+    return array_comprehension_exprt{
+      std::move(array_comprehension_index),
+      std::move(body),
+      array_typet{bv_typet{bits_per_byte}, from_integer(0, size_type())}};
+  }
 
   return array_comprehension_exprt{
     std::move(array_comprehension_index),
@@ -1055,8 +1068,22 @@ static exprt unpack_rec(
       }
     }
 
-    auto const src_as_bitvector = typecast_exprt::conditional_cast(
+    // When the source width is not a multiple of the byte size, round up
+    // to the next byte boundary and zero-extend the source so that all
+    // byte-sized extractbits operations remain within bounds. The padding
+    // bits (the high bits of the final partial byte) are unspecified and are
+    // filled with zero.
+    const mp_integer padded_bits =
+      total_bits % bits_per_byte == 0
+        ? total_bits
+        : total_bits + bits_per_byte - total_bits % bits_per_byte;
+    exprt src_as_bitvector = typecast_exprt::conditional_cast(
       src, bv_typet{numeric_cast_v<std::size_t>(total_bits)});
+    if(padded_bits > total_bits)
+    {
+      src_as_bitvector = zero_extend_exprt{
+        src_as_bitvector, bv_typet{numeric_cast_v<std::size_t>(padded_bits)}};
+    }
     auto const byte_type = bv_typet{bits_per_byte};
     exprt::operandst byte_operands;
     array_typet array_type{
@@ -1457,8 +1484,21 @@ exprt lower_byte_extract(const byte_extract_exprt &src, const namespacet &ns)
 
   if(width_bytes == 1)
   {
+    const typet &result_type = src.type();
+    if(
+      result_type.id() == ID_struct || result_type.id() == ID_struct_tag ||
+      result_type.id() == ID_union || result_type.id() == ID_union_tag ||
+      result_type.id() == ID_array || result_type.id() == ID_vector ||
+      result_type.id() == ID_complex)
+    {
+      // A composite result type cannot be produced by a plain typecast (the
+      // SMT2 back-end has no bit-vector -> struct/union/array typecast); build
+      // the aggregate from the single byte instead.
+      endianness_mapt map{op.front().type(), little_endian, ns};
+      return bv_to_expr(op.front(), result_type, map, ns);
+    }
     return simplify_expr(
-      typecast_exprt::conditional_cast(op.front(), src.type()), ns);
+      typecast_exprt::conditional_cast(op.front(), result_type), ns);
   }
   else // width_bytes>=2
   {

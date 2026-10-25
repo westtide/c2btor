@@ -23,6 +23,7 @@ Author: Daniel Kroening, kroening@kroening.com
 #include "simplify_expr_with_value_set.h"
 
 #include <algorithm>
+#include <map>
 
 void goto_symext::apply_goto_condition(
   goto_symex_statet &current_state,
@@ -339,10 +340,11 @@ void goto_symext::symex_goto(statet &state)
 
       log.conditional_output(
         log.debug(),
-        [this, &new_lhs](messaget::mstreamt &mstream) {
-          mstream << "Assignment to " << new_lhs.get_identifier()
-                  << " [" << pointer_offset_bits(new_lhs.type(), ns).value_or(0) << " bits]"
-                  << messaget::eom;
+        [this, &new_lhs](messaget::mstreamt &mstream)
+        {
+          mstream << "Assignment to " << new_lhs.identifier() << " ["
+                  << pointer_offset_bits(new_lhs.type(), ns).value_or(0)
+                  << " bits]" << messaget::eom;
         });
 
       target.assignment(
@@ -583,7 +585,7 @@ static void merge_names(
   const std::size_t goto_count,
   const std::size_t dest_count)
 {
-  const irep_idt l1_identifier = ssa.get_identifier();
+  const irep_idt l1_identifier = ssa.identifier();
   const irep_idt &obj_identifier = ssa.get_object_name();
 
   if(obj_identifier == goto_symext::statet::guard_identifier())
@@ -682,8 +684,10 @@ static void merge_names(
   dest_state.record_events.pop();
 
   log.conditional_output(
-    log.debug(), [ns, &new_lhs](messaget::mstreamt &mstream) {
-      mstream << "Assignment to " << new_lhs.get_identifier() << " ["
+    log.debug(),
+    [ns, &new_lhs](messaget::mstreamt &mstream)
+    {
+      mstream << "Assignment to " << new_lhs.identifier() << " ["
               << pointer_offset_bits(new_lhs.type(), ns).value_or(0) << " bits]"
               << messaget::eom;
     });
@@ -715,8 +719,20 @@ void goto_symext::phi_function(
   goto_state.get_level2().current_names.get_delta_view(
     dest_state.get_level2().current_names, delta_view, false);
 
-  for(const auto &delta_item : delta_view)
+  std::map<std::string, symex_renaming_levelt::delta_viewt::const_iterator>
+    ordered_names_to_merge;
+  for(auto it = delta_view.begin(); it != delta_view.end(); ++it)
   {
+    const ssa_exprt &ssa = it->m.first;
+    bool inserted =
+      ordered_names_to_merge.insert({id2string(ssa.get_identifier()), it})
+        .second;
+    CHECK_RETURN(inserted);
+  }
+
+  for(const auto &ordered_entry : ordered_names_to_merge)
+  {
+    const auto &delta_item = *ordered_entry.second;
     const ssa_exprt &ssa = delta_item.m.first;
     std::size_t goto_count = delta_item.m.second;
     std::size_t dest_count = !delta_item.is_in_both_maps()
@@ -741,11 +757,22 @@ void goto_symext::phi_function(
   dest_state.get_level2().current_names.get_delta_view(
     goto_state.get_level2().current_names, delta_view, false);
 
-  for(const auto &delta_item : delta_view)
+  ordered_names_to_merge.clear();
+  for(auto it = delta_view.begin(); it != delta_view.end(); ++it)
   {
-    if(delta_item.is_in_both_maps())
+    if(it->is_in_both_maps())
       continue;
 
+    const ssa_exprt &ssa = it->m.first;
+    bool inserted =
+      ordered_names_to_merge.insert({id2string(ssa.get_identifier()), it})
+        .second;
+    CHECK_RETURN(inserted);
+  }
+
+  for(const auto &ordered_entry : ordered_names_to_merge)
+  {
+    const auto &delta_item = *ordered_entry.second;
     const ssa_exprt &ssa = delta_item.m.first;
     std::size_t goto_count = 0;
     std::size_t dest_count = delta_item.m.second;

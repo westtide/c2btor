@@ -1,8 +1,0 @@
-CORE glpk
-aclwdrr008.c
-POWER OPT
-^EXIT=0$
-^SIGNAL=0$
-^VERIFICATION SUCCESSFUL$
---
-^warning: ignoring

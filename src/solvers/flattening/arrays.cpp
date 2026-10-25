@@ -80,6 +80,19 @@ literalt arrayst::record_array_equality(
   return array_equalities.back().l;
 }
 
+void arrayst::record_array_let_binding(
+  const symbol_exprt &symbol,
+  const exprt &value)
+{
+  DATA_INVARIANT(
+    symbol.type().id() == ID_array,
+    "record_array_let_binding parameter should be array-typed");
+
+  const equal_exprt eq{symbol, value};
+  const literalt eq_lit = record_array_equality(eq);
+  prop.l_set_to_true(eq_lit);
+}
+
 void arrayst::collect_indices()
 {
   for(std::size_t i=0; i<arrays.size(); i++)
@@ -94,7 +107,7 @@ void arrayst::collect_indices(const exprt &expr)
   {
     if(expr.id() == ID_array_comprehension)
       array_comprehension_args.insert(
-        to_array_comprehension_expr(expr).arg().get_identifier());
+        to_array_comprehension_expr(expr).arg().identifier());
 
     for(const auto &op : expr.operands())
       collect_indices(op);
@@ -105,8 +118,8 @@ void arrayst::collect_indices(const exprt &expr)
 
     if(
       e.index().id() == ID_symbol &&
-      array_comprehension_args.count(
-        to_symbol_expr(e.index()).get_identifier()) != 0)
+      array_comprehension_args.count(to_symbol_expr(e.index()).identifier()) !=
+        0)
     {
       return;
     }

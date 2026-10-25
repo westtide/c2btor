@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: BSD-4-Clause
+// SPDX-FileCopyrightText: 2026 C2BTOR contributors
+
 #include "memory_capacity.h"
 
 #include <util/arith_tools.h>
@@ -5,6 +8,7 @@
 #include <util/bitvector_types.h>
 #include <util/c_types.h>
 #include <util/config.h>
+#include <util/expr_util.h>
 #include <util/find_symbols.h>
 #include <util/pointer_expr.h>
 #include <util/pointer_offset_size.h>
@@ -12,9 +16,11 @@
 #include <util/symbol.h>
 
 #include "btor2_type_utils.h"
+#include "memory_access.h"
 
 #include <algorithm>
 #include <deque>
+#include <iterator>
 #include <optional>
 #include <set>
 #include <vector>
@@ -34,17 +40,24 @@ struct statet
   bool reachable = false;
   // Missing entries mean the full range of the symbol's machine type.
   std::map<exprt, ranget> values;
+  std::map<exprt, std::set<irep_idt>> pointer_roots;
+  // Exact, pure predicate values captured by inlined condition temporaries.
+  // Joins retain only identical facts; writes invalidate their dependencies.
+  std::map<exprt, exprt> predicates;
 };
 
 // Forward integer intervals over the final (inlined/lowered) CFG. Joins take
-// the union; expanding back edges widen to the full machine range. Guards and
+// the union; expanding back edges widen through a finite set of program
+// constants, falling back to the full machine range. Guards and
 // existing assumes only narrow reachable states. Unsupported operations lose
 // precision, never reachable inputs. The result sizes backing storage only;
-// runtime object size/lifetime and validity checks stay in heap_modelt.
+// runtime object size and lifetime remain ordinary heap metadata.
 class capacity_analysist
 {
   const namespacet &ns;
   std::set<irep_idt> escaped;
+  bool arbitrary_pointer_inputs = false;
+  std::set<mp_integer> widening_thresholds;
 
   std::optional<ranget> type_range(const typet &original) const
   {
@@ -66,6 +79,41 @@ class capacity_analysist
     return ranget{0, (mp_integer(1) << width) - 1};
   }
 
+  void find_widening_thresholds(const exprt &expr)
+  {
+    if(expr.id() == ID_constant && type_range(expr.type()))
+      if(const auto value = numeric_cast<mp_integer>(expr))
+      {
+        // Neighbours cover strict comparisons. Use mathematical integers here;
+        // a threshold is a widening choice, not arithmetic in the literal type.
+        widening_thresholds.insert(*value - 1);
+        widening_thresholds.insert(*value);
+        widening_thresholds.insert(*value + 1);
+      }
+    for(const auto &op : expr.operands())
+      find_widening_thresholds(op);
+  }
+
+  ranget widen(const ranget &previous, ranget joined, const typet &type) const
+  {
+    const auto full = type_range(type);
+    if(joined.lower < previous.lower)
+    {
+      const auto next = widening_thresholds.upper_bound(joined.lower);
+      joined.lower = next == widening_thresholds.begin()
+                       ? full->lower
+                       : std::max(full->lower, *std::prev(next));
+    }
+    if(joined.upper > previous.upper)
+    {
+      const auto next = widening_thresholds.lower_bound(joined.upper);
+      joined.upper = next == widening_thresholds.end()
+                       ? full->upper
+                       : std::min(full->upper, *next);
+    }
+    return joined;
+  }
+
   static irep_idt root_id(const exprt &location)
   {
     const exprt *root = &location;
@@ -78,9 +126,19 @@ class capacity_analysist
 
   void forget(statet &state, const irep_idt &id) const
   {
+    for(auto it = state.predicates.begin(); it != state.predicates.end();)
+      if(root_id(it->first) == id || has_symbol_expr(it->second, id, true))
+        it = state.predicates.erase(it);
+      else
+        ++it;
     for(auto it = state.values.begin(); it != state.values.end();)
       if(root_id(it->first) == id)
         it = state.values.erase(it);
+      else
+        ++it;
+    for(auto it = state.pointer_roots.begin(); it != state.pointer_roots.end();)
+      if(root_id(it->first) == id)
+        it = state.pointer_roots.erase(it);
       else
         ++it;
   }
@@ -127,24 +185,116 @@ class capacity_analysist
       find_escaped(op);
   }
 
+  bool in_byte_memory(const irep_idt &id) const
+  {
+    const symbolt *symbol = nullptr;
+    const bool found = !ns.lookup(id, symbol) && symbol;
+    const auto type = found ? follow_tag_type(symbol->type, ns) : typet{};
+    return (arbitrary_pointer_inputs && found &&
+            is_c_source_object(*symbol, ns)) ||
+           escaped.count(id) || (found && symbol->is_static_lifetime) ||
+           type.id() == ID_struct || type.id() == ID_union ||
+           type.id() == ID_array;
+  }
+
   void havoc_memory(statet &state) const
   {
-    // Aggregate roots always live in byte memory, including roots without an
-    // explicit address_of. Unknown pointer stores must forget their fields.
-    // Non-address-taken scalar locals remain independent of byte memory.
-    for(auto it = state.values.begin(); it != state.values.end();)
+    // Use the same arbitrary-pointer trigger as object-universe closure.
+    // Unknown writes may alter promoted scalars even without a textual &x.
+    for(auto it = state.predicates.begin(); it != state.predicates.end();)
     {
-      const symbolt *symbol;
-      const bool found = !ns.lookup(root_id(it->first), symbol);
-      const auto type = found ? follow_tag_type(symbol->type, ns) : typet{};
-      if(
-        escaped.count(root_id(it->first)) ||
-        (found && symbol->is_static_lifetime) || type.id() == ID_struct ||
-        type.id() == ID_union || type.id() == ID_array)
-        it = state.values.erase(it);
+      find_symbols_sett dependencies;
+      find_symbols(it->second, dependencies);
+      const bool invalid =
+        in_byte_memory(root_id(it->first)) ||
+        std::any_of(
+          dependencies.begin(),
+          dependencies.end(),
+          [&](const irep_idt &id) { return in_byte_memory(id); });
+      if(invalid)
+        it = state.predicates.erase(it);
       else
         ++it;
     }
+    for(auto it = state.values.begin(); it != state.values.end();)
+      if(in_byte_memory(root_id(it->first)))
+        it = state.values.erase(it);
+      else
+        ++it;
+    for(auto it = state.pointer_roots.begin(); it != state.pointer_roots.end();)
+      if(in_byte_memory(root_id(it->first)))
+        it = state.pointer_roots.erase(it);
+      else
+        ++it;
+  }
+
+  std::set<irep_idt> known_roots(const exprt &raw, const statet &state) const
+  {
+    const auto expr = simplify_expr(raw, ns);
+    if(expr.id() == ID_side_effect && expr.get(ID_statement) == ID_allocate)
+      return {"__c2btor_fresh_allocation_root"};
+    if(
+      expr.type().id() == ID_pointer && expr.is_constant() &&
+      to_constant_expr(expr).is_null_pointer())
+      return {"__c2btor_fresh_allocation_root"}; // selects no C scalar
+    if(expr.id() == ID_address_of)
+    {
+      const auto id = root_id(to_address_of_expr(expr).object());
+      return id.empty() ? std::set<irep_idt>{} : std::set<irep_idt>{id};
+    }
+    if(expr.id() == ID_typecast)
+    {
+      const auto &operand = to_typecast_expr(expr).op();
+      if(operand.type().id() == ID_array && operand.id() == ID_symbol)
+        return {to_symbol_expr(operand).get_identifier()};
+      if(operand.type().id() == ID_pointer && expr.type().id() == ID_pointer)
+        return known_roots(operand, state);
+      return {};
+    }
+    if(
+      (expr.id() == ID_plus || expr.id() == ID_minus) &&
+      expr.type().id() == ID_pointer)
+      for(const auto &operand : expr.operands())
+        if(operand.type().id() == ID_pointer)
+          return known_roots(operand, state);
+    if(expr.id() == ID_if)
+    {
+      auto left = known_roots(to_if_expr(expr).true_case(), state);
+      const auto right = known_roots(to_if_expr(expr).false_case(), state);
+      if(left.empty() || right.empty())
+        return {};
+      left.insert(right.begin(), right.end());
+      return left;
+    }
+    const auto found = state.pointer_roots.find(expr);
+    return found == state.pointer_roots.end() ? std::set<irep_idt>{}
+                                              : found->second;
+  }
+
+  static const exprt *indirect_pointer(const exprt &location)
+  {
+    const exprt *root = &location;
+    while(root->id() == ID_member || root->id() == ID_index ||
+          root->id() == ID_typecast ||
+          root->id() == ID_byte_extract_little_endian ||
+          root->id() == ID_byte_extract_big_endian)
+    {
+      if(
+        root->id() == ID_index && root->operands()[0].type().id() == ID_pointer)
+        return &root->operands()[0];
+      root = &root->operands()[0];
+    }
+    return root->id() == ID_dereference ? &root->operands()[0] : nullptr;
+  }
+
+  void havoc_write(statet &state, const exprt &pointer) const
+  {
+    const auto roots = known_roots(pointer, state);
+    if(roots.empty())
+      havoc_memory(state);
+    else
+      for(const auto &id : roots)
+        forget(state, id);
   }
 
   exprt measure(const exprt &pointer, bool size) const
@@ -152,6 +302,17 @@ class capacity_analysist
     return size ? exprt(object_size_exprt(pointer, size_type()))
                 : exprt(pointer_offset_exprt(
                     pointer, signedbv_typet(config.ansi_c.pointer_width)));
+  }
+
+  std::optional<ranget>
+  evaluate_size(const exprt &raw, const statet &state) const
+  {
+    // Match memory_accesst::pointer_integer at DECL/allocate. In particular,
+    // a negative signed size wraps to a large unsigned value, never zero.
+    return evaluate(
+      typecast_exprt::conditional_cast(
+        raw, unsignedbv_typet(config.ansi_c.pointer_width)),
+      state);
   }
 
   std::optional<ranget>
@@ -168,7 +329,7 @@ class capacity_analysist
     if(
       pointer.id() == ID_side_effect &&
       pointer.get(ID_statement) == ID_allocate)
-      return size ? evaluate(pointer.operands()[0], state)
+      return size ? evaluate_size(pointer.operands()[0], state)
                   : std::optional<ranget>{{0, 0}};
     if(pointer.id() == ID_address_of)
     {
@@ -193,7 +354,7 @@ class capacity_analysist
         if(!size)
           return base ? std::optional<ranget>{{0, 0}} : std::optional<ranget>{};
         const auto bytes = size_of_expr(root->type(), ns);
-        return bytes ? evaluate(*bytes, state) : std::optional<ranget>{};
+        return bytes ? evaluate_size(*bytes, state) : std::optional<ranget>{};
       }
     }
     if(pointer.id() == ID_plus || pointer.id() == ID_minus)
@@ -230,6 +391,50 @@ class capacity_analysist
     return {};
   }
 
+  exprt expand_predicates(exprt expr, const statet &state) const
+  {
+    const auto fact = state.predicates.find(expr);
+    if(fact != state.predicates.end())
+      return fact->second; // Stored expressions are already expanded.
+    for(auto &operand : expr.operands())
+      operand = expand_predicates(std::move(operand), state);
+    return expr;
+  }
+
+  std::optional<exprt>
+  predicate_value(const exprt &rhs, const statet &state) const
+  {
+    auto value = simplify_expr(expand_predicates(rhs, state), ns);
+    // Capture only scalar expressions. Memory reads and side effects are not
+    // stable dependencies, and must never be replayed at a later guard.
+    if(
+      has_subexpr(
+        value,
+        [](const exprt &e)
+        {
+          return e.id() == ID_side_effect || e.id() == ID_dereference ||
+                 e.id() == ID_member || e.id() == ID_index ||
+                 e.type().id() == ID_pointer;
+        }))
+      return {};
+    const exprt *predicate = &value;
+    while(predicate->id() == ID_typecast)
+      predicate = &predicate->operands()[0];
+    if(predicate->type().id() != ID_bool)
+    {
+      // simplify_expr represents an integer cast of a Boolean as P ? 1 : 0.
+      if(predicate->id() != ID_if)
+        return {};
+      const auto yes =
+                   numeric_cast<mp_integer>(to_if_expr(*predicate).true_case()),
+                 no = numeric_cast<mp_integer>(
+                   to_if_expr(*predicate).false_case());
+      if(!yes || !no || (*yes != 0) == (*no != 0))
+        return {};
+    }
+    return value;
+  }
+
   void assign(statet &state, const exprt &raw_lhs, const exprt &rhs) const
   {
     const exprt *lhs = &raw_lhs;
@@ -240,9 +445,18 @@ class capacity_analysist
       if(object.type() == lhs->type())
         lhs = &object;
     }
+    if(const auto pointer = indirect_pointer(*lhs))
+    {
+      havoc_write(state, *pointer);
+      return;
+    }
     if(lhs->id() != ID_symbol && lhs->id() != ID_member)
     {
-      havoc_memory(state);
+      const auto id = root_id(*lhs);
+      if(id.empty())
+        havoc_memory(state);
+      else
+        forget(state, id);
       return;
     }
     const auto type = follow_tag_type(lhs->type(), ns);
@@ -252,6 +466,7 @@ class capacity_analysist
       // including copies/casts. This bounds OBJECT_SIZE in copy/realloc IR.
       const auto bytes = pointer_measure(rhs, state, true),
                  offset = pointer_measure(rhs, state, false);
+      const auto roots = known_roots(rhs, state);
       forget(state, root_id(*lhs));
       const bool union_member =
         lhs->id() == ID_member &&
@@ -259,6 +474,8 @@ class capacity_analysist
           ID_struct;
       if(!union_member)
       {
+        if(!roots.empty())
+          state.pointer_roots[*lhs] = roots;
         if(bytes)
           put(state, measure(*lhs, true), *bytes);
         if(offset)
@@ -284,6 +501,7 @@ class capacity_analysist
     else
     {
       const auto value = evaluate(rhs, state);
+      const auto predicate = predicate_value(rhs, state);
       if(lhs->id() == ID_symbol)
         forget(state, root_id(*lhs));
       // Union field writes can affect every other field; do not track them.
@@ -296,6 +514,11 @@ class capacity_analysist
         put(state, *lhs, *fit(*value, lhs->type()));
       else
         state.values.erase(*lhs);
+      if(
+        lhs->id() == ID_symbol && predicate &&
+        !has_symbol_expr(*predicate, root_id(*lhs), true))
+        state.predicates[*lhs] =
+          typecast_exprt::conditional_cast(*predicate, lhs->type());
     }
   }
 
@@ -464,7 +687,7 @@ public:
 
   void assume(statet &state, const exprt &raw, bool truth) const
   {
-    const auto expr = simplify_expr(raw, ns);
+    const auto expr = simplify_expr(expand_predicates(raw, state), ns);
     const auto condition = evaluate(expr, state);
     if(condition && condition->lower == condition->upper)
     {
@@ -474,6 +697,51 @@ public:
     }
     if(expr.id() == ID_not)
       return assume(state, expr.operands()[0], !truth);
+    if(expr.id() == ID_if)
+    {
+      const auto yes = numeric_cast<mp_integer>(to_if_expr(expr).true_case()),
+                 no = numeric_cast<mp_integer>(to_if_expr(expr).false_case());
+      if(yes && no && (*yes != 0) != (*no != 0))
+        return assume(state, to_if_expr(expr).cond(), truth == (*yes != 0));
+    }
+    if(
+      (expr.id() == ID_equal || expr.id() == ID_notequal) &&
+      (expr.operands()[0].is_zero() || expr.operands()[1].is_zero()))
+    {
+      const auto &value = expr.operands()[expr.operands()[0].is_zero() ? 1 : 0];
+      return assume(state, value, truth == (expr.id() == ID_notequal));
+    }
+    if(expr.id() == ID_symbol && condition)
+    {
+      auto narrowed = *condition;
+      if(!truth)
+      {
+        if(narrowed.lower > 0 || narrowed.upper < 0)
+          state.reachable = false;
+        else
+          put(state, expr, {0, 0});
+      }
+      else
+      {
+        if(narrowed.lower == 0)
+          narrowed.lower = 1;
+        if(narrowed.upper == 0)
+          narrowed.upper = -1;
+        put(state, expr, narrowed);
+      }
+      return;
+    }
+    if(expr.id() == ID_typecast)
+    {
+      const auto &operand = expr.operands()[0];
+      const auto source = evaluate(operand, state),
+                 converted = evaluate(expr, state);
+      if(
+        operand.type().id() == ID_bool || expr.type().id() == ID_bool ||
+        expr.type().id() == ID_c_bool ||
+        (source && converted && *source == *converted))
+        return assume(state, operand, truth);
+    }
     if((expr.id() == ID_and && truth) || (expr.id() == ID_or && !truth))
     {
       for(const auto &op : expr.operands())
@@ -545,9 +813,12 @@ public:
     refine(expr.operands()[1], *a, reversed);
   }
 
-  memory_capacity_boundst
-  run(const goto_programt &program, const std::map<irep_idt, exprt> &sizes)
+  memory_capacity_boundst run(
+    const goto_programt &program,
+    const std::map<irep_idt, exprt> &sizes,
+    bool collect_condition_intervals)
   {
+    arbitrary_pointer_inputs = has_arbitrary_pointer_input(program, ns);
     std::vector<goto_programt::const_targett> instructions;
     std::map<const goto_programt::instructiont *, std::size_t> indices;
     find_symbols_sett symbols;
@@ -558,22 +829,29 @@ public:
       indices.emplace(&*it, instructions.size());
       instructions.push_back(it);
       find_escaped(it->code());
+      find_widening_thresholds(it->code());
       find_symbols(it->code(), symbols);
       if(it->has_condition())
       {
         find_escaped(it->condition());
+        find_widening_thresholds(it->condition());
         find_symbols(it->condition(), symbols);
       }
     }
     std::vector<statet> before(instructions.size());
     before.front().reachable = true;
+    for(const auto &size : sizes)
+      find_widening_thresholds(size.second);
     for(const auto &id : symbols)
     {
       const symbolt *symbol;
       if(
         !ns.lookup(id, symbol) && symbol->is_static_lifetime &&
         symbol->value.is_not_nil())
+      {
+        find_widening_thresholds(symbol->value);
         assign(before.front(), symbol->symbol_expr(), symbol->value);
+      }
     }
     std::deque<std::size_t> queue{0};
     std::vector<bool> queued(instructions.size(), false);
@@ -601,13 +879,7 @@ public:
             std::min(it->second.lower, other->second.lower),
             std::max(it->second.upper, other->second.upper)};
           if(to <= from)
-          {
-            const auto full = type_range(it->first.type());
-            if(joined.lower < it->second.lower)
-              joined.lower = full->lower;
-            if(joined.upper > it->second.upper)
-              joined.upper = full->upper;
-          }
+            joined = widen(it->second, joined, it->first.type());
           if(!(joined == it->second))
           {
             it->second = joined;
@@ -616,6 +888,36 @@ public:
           ++it;
         }
       }
+      if(dest.reachable)
+        for(auto it = dest.predicates.begin(); it != dest.predicates.end();)
+        {
+          const auto other = incoming.predicates.find(it->first);
+          if(other == incoming.predicates.end() || other->second != it->second)
+          {
+            it = dest.predicates.erase(it);
+            changed = true;
+          }
+          else
+            ++it;
+        }
+      if(dest.reachable)
+        for(auto it = dest.pointer_roots.begin();
+            it != dest.pointer_roots.end();)
+        {
+          const auto other = incoming.pointer_roots.find(it->first);
+          if(other == incoming.pointer_roots.end())
+          {
+            it = dest.pointer_roots.erase(it);
+            changed = true;
+          }
+          else
+          {
+            const auto old = it->second.size();
+            it->second.insert(other->second.begin(), other->second.end());
+            changed |= old != it->second.size();
+            ++it;
+          }
+        }
       if(changed && !queued[to])
       {
         queue.push_back(to);
@@ -644,7 +946,23 @@ public:
       else if(ins.is_assume())
         assume(next, ins.condition(), true);
       else if(ins.is_other())
-        havoc_memory(next);
+      {
+        const auto statement = ins.get_other().get_statement();
+        const bool pure_expression =
+          statement == ID_expression &&
+          !has_subexpr(
+            ins.code(),
+            [](const exprt &expr) { return expr.id() == ID_side_effect; });
+        if(
+          (statement == "c2btor_copy_range" ||
+           statement == "c2btor_copy_byte") &&
+          !ins.code().operands().empty())
+          havoc_write(next, ins.code().operands()[0]);
+        else if(
+          statement != "c2btor_copy_check" &&
+          statement != "c2btor_deallocate" && !pure_expression)
+          havoc_memory(next);
+      }
       if(ins.is_goto())
       {
         auto taken = next;
@@ -658,6 +976,7 @@ public:
     }
 
     memory_capacity_boundst bounds;
+    std::set<irep_idt> unknown_object_sizes;
     std::set<irep_idt> unreachable_declarations;
     for(const auto instruction : instructions)
       if(instruction->is_decl())
@@ -668,30 +987,76 @@ public:
       const auto &ins = *instructions[i];
       if(!before[i].reachable)
         continue;
+      if(collect_condition_intervals && ins.is_assign())
+        if(const auto pointer = indirect_pointer(ins.assign_lhs()))
+          if(known_roots(*pointer, before[i]).empty())
+            bounds.unknown_indirect_writes.insert(&ins);
+      if(collect_condition_intervals && ins.is_other())
+      {
+        const auto statement = ins.get_other().get_statement();
+        if(
+          (statement == "c2btor_copy_range" ||
+           statement == "c2btor_copy_byte") &&
+          !ins.code().operands().empty() &&
+          known_roots(ins.code().operands()[0], before[i]).empty())
+          bounds.unknown_indirect_writes.insert(&ins);
+      }
+      if(collect_condition_intervals && ins.is_goto())
+      {
+        auto record = [&](const auto &self, const exprt &expr) -> void
+        {
+          if(const auto interval = evaluate(expr, before[i]))
+            bounds.condition_intervals[&ins].emplace(
+              expr, std::make_pair(interval->lower, interval->upper));
+          for(const auto &operand : expr.operands())
+            self(self, operand);
+        };
+        record(record, ins.condition());
+      }
       if(ins.is_decl())
       {
         const auto id = ins.decl_symbol().get_identifier();
         unreachable_declarations.erase(id);
         const auto object = sizes.find(id);
         if(object != sizes.end())
-          if(const auto size = evaluate(object->second, before[i]))
+        {
+          if(const auto size = evaluate_size(object->second, before[i]))
             bounds.objects[id] = std::max(bounds.objects[id], size->upper);
+          else
+            unknown_object_sizes.insert(id);
+        }
       }
       auto allocations = [&](const auto &self, const exprt &expr) -> void
       {
-        if(
-          expr.id() == ID_side_effect &&
-          expr.get(ID_statement) == ID_allocate && expr.operands().size() == 2)
-          if(const auto size = evaluate(expr.operands()[0], before[i]))
+        if(expr.id() == ID_side_effect && expr.get(ID_statement) == ID_allocate)
+        {
+          const auto size = expr.operands().size() == 2
+                              ? evaluate_size(expr.operands()[0], before[i])
+                              : std::optional<ranget>{};
+          if(expr.operands().size() == 2)
+            bounds.allocation_sizes.push_back(
+              {&ins,
+               expr.operands()[0],
+               size ? std::optional<std::pair<mp_integer, mp_integer>>(
+                        std::make_pair(size->lower, size->upper))
+                    : std::nullopt});
+          if(size)
             bounds.allocation = std::max(bounds.allocation, size->upper);
+          else
+            bounds.allocation_complete = false;
+        }
         for(const auto &op : expr.operands())
           self(self, op);
       };
       allocations(allocations, ins.code());
+      if(ins.has_condition())
+        allocations(allocations, ins.condition());
     }
     // An overapproximated CFG with no reachable declaration needs no backing
-    // bytes for that object. Missing *reachable* size information still falls
-    // back to the representation ceiling. Do not conflate the two cases.
+    // bytes for that object. Missing reachable size information must reject
+    // conversion, including when another DECL of that symbol has a known size.
+    for(const auto &id : unknown_object_sizes)
+      bounds.objects.erase(id);
     for(const auto &id : unreachable_declarations)
       if(sizes.find(id) != sizes.end())
         bounds.objects[id] = 0;
@@ -703,7 +1068,94 @@ public:
 memory_capacity_boundst infer_memory_capacity(
   const goto_programt &program,
   const namespacet &ns,
-  const std::map<irep_idt, exprt> &object_sizes)
+  const std::map<irep_idt, exprt> &object_sizes,
+  bool collect_condition_intervals)
 {
-  return capacity_analysist(ns).run(program, object_sizes);
+  return capacity_analysist(ns).run(
+    program, object_sizes, collect_condition_intervals);
+}
+
+mp_integer
+allocation_evaluation_weight(const goto_programt::instructiont &instruction)
+{
+  mp_integer count = 0;
+  auto allocations = [&](const auto &self, const exprt &expr) -> void
+  {
+    if(expr.id() == ID_side_effect && expr.get(ID_statement) == ID_allocate)
+      ++count;
+    for(const auto &operand : expr.operands())
+      self(self, operand);
+  };
+  allocations(allocations, instruction.code());
+  if(instruction.has_condition())
+    allocations(allocations, instruction.condition());
+  const auto multiplier =
+    instruction.code().get_string(C2BTOR_ALLOCATION_MULTIPLIER);
+  return multiplier.empty() ? count : count * string2integer(multiplier);
+}
+
+unsigned infer_allocation_slots(const goto_programt &program, unsigned budget)
+{
+  if(budget == 0 || program.instructions.empty())
+    return 0;
+  std::vector<goto_programt::const_targett> instructions;
+  std::map<const goto_programt::instructiont *, std::size_t> indices;
+  for(auto it = program.instructions.begin(); it != program.instructions.end();
+      ++it)
+  {
+    indices.emplace(&*it, instructions.size());
+    instructions.push_back(it);
+  }
+  std::vector<unsigned> weights;
+  for(const auto instruction : instructions)
+    weights.push_back(
+      numeric_cast_v<unsigned>(std::min(
+        mp_integer(budget), allocation_evaluation_weight(*instruction))));
+  // The abstract value is the greatest evaluation count reaching an instruction.
+  // Join by max; addition saturates at budget. Thus zero-allocation cycles do
+  // not increase it and allocation cycles conservatively reach the full budget.
+  // The finite lattice terminates without assuming source loop bounds.
+  std::vector<std::optional<unsigned>> before(instructions.size());
+  std::vector<bool> queued(instructions.size(), false);
+  std::deque<std::size_t> work{0};
+  before[0] = 0;
+  queued[0] = true;
+  unsigned result = 0;
+  while(!work.empty())
+  {
+    const auto index = work.front();
+    work.pop_front();
+    queued[index] = false;
+    const auto it = instructions[index];
+    // Non-sequential control flow is outside this analysis. The converter also
+    // rejects these operations; retaining all slots avoids relying on that.
+    if(
+      it->is_start_thread() || it->is_end_thread() || it->is_throw() ||
+      it->is_catch() || it->is_incomplete_goto())
+      return budget;
+    const auto count =
+      *before[index] + std::min(budget - *before[index], weights[index]);
+    result = std::max(result, count);
+    if(result == budget)
+      return budget;
+    if(it->is_end_function())
+      continue;
+    for(const auto successor : program.get_successors(it))
+    {
+      const auto found = indices.find(&*successor);
+      if(found == indices.end())
+        return budget;
+      const auto next = found->second;
+      if(!before[next] || count > *before[next])
+      {
+        before[next] = count;
+        if(!queued[next])
+        {
+          work.push_back(next);
+          queued[next] = true;
+        }
+      }
+    }
+  }
+  return result;
 }

@@ -1,0 +1,124 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: BSD-4-Clause
+# SPDX-FileCopyrightText: 2026 C2BTOR contributors
+"""Single-task C -> BTOR2 -> four Carat configurations -> YAML 2.1 witness."""
+import argparse
+import json
+from pathlib import Path
+import subprocess
+import signal
+import sys
+import tempfile
+import time
+from contextlib import contextmanager
+
+from scripts.carat import race
+from scripts.source_map import Btor2Model, digest, enrich_map
+from scripts.trace_recovery import error_function, executable, recover
+from scripts.correctness import generate_weak
+from scripts.yaml21_writer import publish_file
+
+
+def parser():
+    result = argparse.ArgumentParser(description=__doc__)
+    result.add_argument("program", help="C source file")
+    result.add_argument("--property", required=True)
+    result.add_argument("--data-model", choices=("ILP32", "LP64"), required=True)
+    result.add_argument("--witness-output", default="witness.yml")
+    result.add_argument("--keep-intermediates", metavar="DIR", help="retain model, map and standard counterexample")
+    result.add_argument("--version", action="version", version="2.1-v2")
+    return result
+
+
+@contextmanager
+def work_directory(keep):
+    if keep:
+        directory = Path(keep).resolve()
+        directory.mkdir(parents=True, exist_ok=False)
+        yield directory
+    else:
+        with tempfile.TemporaryDirectory(prefix="c2btor-") as directory:
+            yield Path(directory)
+
+
+def run(args):
+    deadline = time.monotonic() + 900
+    source, prop, output = (Path(value).resolve() for value in (args.program, args.property, args.witness_output))
+    if not source.is_file() or not prop.is_file():
+        raise ValueError("source and property must be existing files")
+    if output.exists():
+        raise ValueError(f"refusing to replace existing witness: {output}")
+    specification = prop.read_text().strip()
+    error_function(specification)
+    with work_directory(args.keep_intermediates) as directory:
+        model, mapping = directory / "model.btor2", directory / "model.map.json"
+        # 1. Convert C to the model and its source map.
+        conversion = subprocess.run([executable("c2btor"), str(source), "--goto-btor2", "--inline",
+                    "--32" if args.data_model == "ILP32" else "--64", "--goto-btor2-merge-bads",
+                    "--memory", "object", "--array", "array",
+                    "--goto-btor2-out", str(model), "--goto-btor2-map-out", str(mapping)],
+                    capture_output=True, text=True, timeout=max(0, deadline - time.monotonic()))
+        if conversion.returncode:
+            raise ValueError("C2BTOR conversion failed: " + (conversion.stderr or conversion.stdout)[-4000:])
+        value = json.loads(mapping.read_text())
+        value.update(input_files=[str(source)], source_hashes={str(source): digest(source)},
+                     specification=specification)
+        value = enrich_map(value, model)
+        if value["data_model"] != args.data_model:
+            raise ValueError("converter data model differs from requested task")
+        mapping.write_text(json.dumps(value, indent=2) + "\n")
+        if len(Btor2Model(model).bads) != 1:
+            raise ValueError("Carat requires exactly one merged bad property")
+        # 2. Race four single-core configurations under one BenchExec budget.
+        result, winner = race(executable("carat"), model, directory, deadline)
+        if result == "Unknown":
+            return "UNKNOWN"
+        print(f"Carat winner: {winner}", file=sys.stderr)
+        # 3. Write the witness for the reported result.
+        if result == "Unsafe":
+            print("Carat result: Unsafe", file=sys.stderr, flush=True)
+            cex = directory / "model.cex"
+            try:
+                recover(model, mapping, cex, output)
+            except Exception as error:
+                raise ValueError("Carat Unsafe; violation witness delivery failed: " + str(error)) from error
+            return "FALSE(unreach-call)"
+        # This is the existing weak Safe writer. Its invariant='1' is not a
+        # separately verified proof. Arrays competition categories need no Safe
+        # invariant; retaining this baseline also supports other categories.
+        with tempfile.TemporaryDirectory(prefix="c2btor-safe-") as safe:
+            candidate = generate_weak(model, mapping, safe, result="Safe")
+            publish_file(output, candidate)
+        print("Correctness witness: dummy invariant 1; independent validation not claimed", file=sys.stderr)
+        return "TRUE"
+
+
+def main(argv=None):
+    def interrupted(signum, frame):
+        raise KeyboardInterrupt
+
+    def expired(signum, frame):
+        raise TimeoutError("task wall-time limit reached")
+
+    old_term = signal.signal(signal.SIGTERM, interrupted)
+    old_alarm = signal.signal(signal.SIGALRM, expired)
+    signal.setitimer(signal.ITIMER_REAL, 900)
+    try:
+        result = run(parser().parse_args(argv))
+    except (KeyboardInterrupt, TimeoutError, subprocess.TimeoutExpired) as error:
+        print("C2BTOR interrupted or timed out: " + str(error), file=sys.stderr)
+        result = "UNKNOWN"
+    except (ValueError, OSError, KeyError, ImportError, subprocess.SubprocessError) as error:
+        print("c2btor-verify: " + str(error), file=sys.stderr, flush=True)
+        print("Verification result: ERROR", flush=True)
+        return 1
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, old_alarm)
+        signal.signal(signal.SIGTERM, old_term)
+    print("Verification result: " + result, flush=True)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

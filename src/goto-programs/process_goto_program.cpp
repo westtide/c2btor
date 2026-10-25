@@ -22,6 +22,7 @@ Author: Martin Brain, martin.brain@cs.ox.ac.uk
 #include <goto-programs/remove_complex.h>
 #include <goto-programs/remove_function_pointers.h>
 #include <goto-programs/remove_returns.h>
+#include <goto-programs/remove_unused_functions.h>
 #include <goto-programs/remove_vector.h>
 #include <goto-programs/rewrite_rw_ok.h>
 #include <goto-programs/rewrite_union.h>
@@ -74,9 +75,22 @@ bool process_goto_program(
   if(options.get_bool_option("rewrite-rw-ok"))
     rewrite_rw_ok(goto_model);
 
-  // add generic checks
-  log.status() << "Generic Property Instrumentation" << messaget::eom;
-  goto_check_c(options, goto_model, log.get_message_handler());
+  // Drop unreachable functions before instrumentation, after resolving calls.
+  if(options.get_bool_option("drop-unused-functions"))
+  {
+    log.status() << "Removing unused functions" << messaget::eom;
+    remove_unused_functions(goto_model, log.get_message_handler());
+  }
+
+  // CBMC keeps its normal instrumentation. BTOR2 only adds these properties
+  // through its explicit checks entry point, including pragma-enabled checks.
+  if(
+    !options.get_bool_option("goto-btor2") ||
+    options.get_bool_option("goto-btor2-checks"))
+  {
+    log.status() << "Generic Property Instrumentation" << messaget::eom;
+    goto_check_c(options, goto_model, log.get_message_handler());
+  }
   transform_assertions_assumptions(options, goto_model);
 
   // checks don't know about adjusted float expressions

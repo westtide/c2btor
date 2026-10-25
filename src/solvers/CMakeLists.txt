@@ -69,7 +69,7 @@ foreach(SOLVER ${sat_impl})
         # fall-back in case the first URL fails (the Makefile-based build retries up
         # to 2 times)
         download_project(PROJ minisat2
-            URL http://ftp.debian.org/debian/pool/main/m/minisat2/minisat2_2.2.1.orig.tar.gz
+            URL https://deb.debian.org/debian/pool/main/m/minisat2/minisat2_2.2.1.orig.tar.gz
             PATCH_COMMAND patch -p1 -i ${CBMC_SOURCE_DIR}/scripts/minisat-2.2.1-patch
             COMMAND cmake -E copy ${CBMC_SOURCE_DIR}/scripts/minisat2_CMakeLists.txt CMakeLists.txt
             URL_MD5 27faa19ee0508660bd6fb7f894646d42
@@ -121,11 +121,11 @@ foreach(SOLVER ${sat_impl})
         message(STATUS "Building solvers with cadical")
 
         download_project(PROJ cadical
-            URL https://github.com/arminbiere/cadical/archive/rel-2.0.0.tar.gz
-            PATCH_COMMAND patch -p1 -i ${CBMC_SOURCE_DIR}/scripts/cadical-2.0.0-patch
+            URL https://github.com/arminbiere/cadical/archive/rel-3.0.0.tar.gz
+            PATCH_COMMAND patch -p1 -i ${CBMC_SOURCE_DIR}/scripts/cadical-3.0.0-patch
             COMMAND cmake -E copy ${CBMC_SOURCE_DIR}/scripts/cadical_CMakeLists.txt CMakeLists.txt
             COMMAND ./configure
-            URL_MD5 9fc2a66196b86adceb822a583318cc35
+            URL_HASH SHA256=282b1c9422fde8631cb721b86450ae94df4e8de0545c17a69a301aaa4bf92fcf
         )
 
         add_subdirectory(${cadical_SOURCE_DIR} ${cadical_BINARY_DIR})
@@ -144,10 +144,10 @@ foreach(SOLVER ${sat_impl})
         message(STATUS "Building with IPASIR solver linking against: CaDiCaL")
 
         download_project(PROJ cadical
-            URL https://github.com/arminbiere/cadical/archive/rel-2.0.0.tar.gz
-            PATCH_COMMAND patch -p1 -i ${CBMC_SOURCE_DIR}/scripts/cadical-2.0.0-patch
+            URL https://github.com/arminbiere/cadical/archive/rel-3.0.0.tar.gz
+            PATCH_COMMAND patch -p1 -i ${CBMC_SOURCE_DIR}/scripts/cadical-3.0.0-patch
             COMMAND ./configure
-            URL_MD5 9fc2a66196b86adceb822a583318cc35
+            URL_HASH SHA256=282b1c9422fde8631cb721b86450ae94df4e8de0545c17a69a301aaa4bf92fcf
         )
 
         message(STATUS "Building CaDiCaL")
@@ -224,9 +224,5 @@ if(CMAKE_USE_CUDD)
 else()
     target_link_libraries(solvers util)
 endif()
-
-# Executable
-add_executable(smt2_solver smt2/smt2_solver.cpp)
-target_link_libraries(smt2_solver solvers)
 
 generic_includes(solvers)

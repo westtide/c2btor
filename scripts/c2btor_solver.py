@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: BSD-4-Clause
+# SPDX-FileCopyrightText: 2026 C2BTOR contributors
+
 """rIC3 invocation shared by verification and regression runners."""
 from functools import lru_cache
 import subprocess

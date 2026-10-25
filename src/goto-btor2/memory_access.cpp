@@ -1,4 +1,8 @@
+// SPDX-License-Identifier: BSD-4-Clause
+// SPDX-FileCopyrightText: 2026 C2BTOR contributors
+
 #include "memory_access.h"
+#include "automatic_lifetimes.h"
 
 #include <util/arith_tools.h>
 #include <util/bitvector_types.h>
@@ -7,16 +11,133 @@
 #include <util/pointer_expr.h>
 #include <util/pointer_offset_size.h>
 #include <util/simplify_expr.h>
+#include <util/std_code.h>
 #include <util/std_expr.h>
 #include <util/string_constant.h>
 #include <util/symbol.h>
+#include <util/symbol_table_base.h>
 
 #include <ansi-c/padding.h>
+#include <goto-programs/cfg.h>
 
 #include "btor2_type_utils.h"
 #include "expr_to_btor2.h"
 
 #include <algorithm>
+#include <iterator>
+#include <limits>
+
+namespace
+{
+bool contains_pointer(const typet &raw_type, const namespacet &ns)
+{
+  const auto &type = follow_tag_type(raw_type, ns);
+  if(type.id() == ID_pointer)
+    return true;
+  if(type.id() == ID_array)
+    return contains_pointer(to_array_type(type).element_type(), ns);
+  if(type.id() == ID_struct || type.id() == ID_union)
+    for(const auto &field : to_struct_union_type(type).components())
+      if(contains_pointer(field.type(), ns))
+        return true;
+  return false;
+}
+}
+
+bool is_c_source_object(const symbolt &symbol, const namespacet &ns)
+{
+  // Frontend bookkeeping and architecture constants are not source C
+  // objects. Explicit address-of expressions still collect such symbols.
+  const auto file = id2string(symbol.location.get_file());
+  return symbol.mode == ID_C && symbol.is_lvalue && !symbol.is_type &&
+    !symbol.is_macro && !symbol.is_auxiliary &&
+    (file.empty() || file.front() != '<') &&
+    follow_tag_type(symbol.type, ns).id() != ID_code;
+}
+
+bool has_arbitrary_pointer_input(
+  const goto_programt &program, const namespacet &ns)
+{
+  std::set<irep_idt> initializers;
+  std::set<irep_idt> supplied_parameters;
+  for(auto instruction = program.instructions.begin();
+      instruction != program.instructions.end(); ++instruction)
+  {
+    if(!instruction->is_decl())
+      continue;
+    const auto &id = instruction->decl_symbol().get_identifier();
+    const auto next = std::next(instruction);
+    // Inlining materializes each formal as DECL followed by its actual
+    // argument assignment. The actual expression is scanned below; the
+    // formal itself is not an additional external address input.
+    if(next != program.instructions.end() && next->is_assign() &&
+       next->assign_lhs().id() == ID_symbol &&
+       to_symbol_expr(next->assign_lhs()).get_identifier() == id)
+      supplied_parameters.insert(id);
+  }
+  const auto arbitrary = [&](const auto &self, const exprt &e) -> bool {
+    if(e.id() == ID_side_effect && e.get(ID_statement) == ID_nondet &&
+       contains_pointer(e.type(), ns))
+      return true;
+    const auto &type = follow_tag_type(e.type(), ns);
+    if(type.id() == ID_pointer)
+    {
+      if(e.id() == ID_constant &&
+         !to_constant_expr(e).is_null_pointer())
+        return true;
+      if(e.id() == ID_typecast)
+      {
+        const auto &operand = to_typecast_expr(e).op();
+        const auto &source_type = follow_tag_type(operand.type(), ns);
+        if(source_type.id() != ID_pointer && source_type.id() != ID_array &&
+           !(operand.is_constant() && to_constant_expr(operand).is_zero()))
+          return true;
+      }
+      // A pointer representation read from memory may have been supplied
+      // through byte operations or an aggregate input.
+      if(e.id() == ID_dereference || e.id() == ID_member || e.id() == ID_index ||
+         e.id() == ID_byte_extract_little_endian ||
+         e.id() == ID_byte_extract_big_endian)
+        return true;
+    }
+    if(e.id() == ID_symbol)
+    {
+      const auto &id = to_symbol_expr(e).get_identifier();
+      const symbolt *symbol = nullptr;
+      if(!ns.lookup(id, symbol) && symbol)
+      {
+        if(symbol->is_parameter && !supplied_parameters.count(id) &&
+           contains_pointer(symbol->type, ns))
+          return true;
+        if(symbol->is_static_lifetime && initializers.insert(id).second &&
+           symbol->value.is_not_nil() && self(self, symbol->value))
+          return true;
+      }
+    }
+    for(const auto &operand : e.operands())
+      if(self(self, operand))
+        return true;
+    return false;
+  };
+  for(const auto &instruction : program.instructions)
+  {
+    if(instruction.is_function_call() &&
+       instruction.call_function().id() == ID_symbol)
+    {
+      const auto name = id2string(
+        to_symbol_expr(instruction.call_function()).get_identifier());
+      if((name.rfind("__VERIFIER_nondet_", 0) == 0 ||
+          name.rfind("__CPROVER_nondet_", 0) == 0) &&
+         contains_pointer(instruction.call_lhs().type(), ns))
+        return true;
+    }
+    if(arbitrary(arbitrary, instruction.code()) ||
+       (instruction.has_condition() &&
+        arbitrary(arbitrary, instruction.condition())))
+      return true;
+  }
+  return false;
+}
 
 memory_accesst::memory_accesst(
   btor2_buildert &b,
@@ -24,14 +145,25 @@ memory_accesst::memory_accesst(
   const namespacet &ns,
   messaget &log,
   unsigned budget,
-  array_encoding_optionst array_encoding)
-  : heap(b, ns, budget, array_encoding), b(b), expressions(e), ns(ns), log(log)
+  array_encoding_optionst array_encoding,
+  bool enable_logical_arrays)
+  : heap(b, ns, budget, array_encoding),
+    logical_arrays(b, e, ns, array_encoding, enable_logical_arrays),
+    b(b), expressions(e), ns(ns), log(log)
 {
 }
 void memory_accesst::error(const std::string &message)
 {
   failed = true;
   log.error() << "Unsupported byte memory: " << message << messaget::eom;
+}
+void memory_accesst::check_logical_arrays()
+{
+  if(logical_arrays.failed && !logical_failure_reported)
+  {
+    logical_failure_reported = true;
+    error("logical array: " + logical_arrays.failure_reason);
+  }
 }
 void memory_accesst::collect_expr(const exprt &e, bool addressed)
 {
@@ -62,13 +194,30 @@ void memory_accesst::collect_expr(const exprt &e, bool addressed)
       symbol && symbol->is_static_lifetime && symbol->value.is_not_nil())
       collect_expr(symbol->value);
   }
+  const symbolt *source_symbol = nullptr;
+  const bool promote = e.id() == ID_symbol && promote_unaddressed_objects &&
+    !ns.lookup(to_symbol_expr(e).get_identifier(), source_symbol) &&
+    source_symbol && is_c_source_object(*source_symbol, ns);
   if(
-    e.id() == ID_symbol && (addressed || type.id() == ID_array ||
+    e.id() == ID_symbol && (addressed || promote || type.id() == ID_array ||
                             type.id() == ID_struct || type.id() == ID_union))
   {
     const auto id = to_symbol_expr(e).get_identifier();
     const symbolt *symbol = nullptr;
-    if(!ns.lookup(id, symbol) && symbol)
+    if(logical_arrays.owns_symbol(id))
+    {
+      // Classification precedes collection. A logical root has no byte data,
+      // but keeps its identity position and its initializer/type dependencies.
+      if(addressed || promote)
+        error(
+          "logical array unexpectedly requires addressable storage: " +
+          id2string(id));
+      for(auto dimension = type; dimension.id() == ID_array;
+          dimension =
+            follow_tag_type(to_array_type(dimension).element_type(), ns))
+        collect_expr(to_array_type(dimension).size());
+    }
+    else if(!ns.lookup(id, symbol) && symbol)
     {
       auto size = size_of_expr(type, ns);
       if(type.id() == ID_code)
@@ -86,7 +235,10 @@ void memory_accesst::collect_expr(const exprt &e, bool addressed)
         error("unknown object layout for " + id2string(id));
       else
       {
-        const exprt size_expr = fold_size_expr(*size);
+        // Preserve the runtime size expression. Const qualification does not
+        // make assignments from distinct CFG paths or lifetimes interchangeable.
+        // Capacity analysis may bound this expression without rewriting it.
+        const exprt size_expr = simplify_expr(*size, ns);
         heap.objects.emplace(
           id,
           heap_modelt::objectt{
@@ -114,69 +266,28 @@ void memory_accesst::collect_expr(const exprt &e, bool addressed)
     for(const auto &op : e.operands())
       collect_expr(op);
 }
-void memory_accesst::collect_const_bindings(const goto_programt &program)
-{
-  // A C const-qualified local cannot be reassigned through its name, so a
-  // single constant assignment fixes its value for every read in scope.
-  // Folding such symbols into array sizes keeps fixed-size arrays declared
-  // through `const int N = ...; T a[N];` at their real byte capacity instead
-  // of the runtime-object fallback (which silently truncates and freezes).
-  std::set<irep_idt> conflicting;
-  for(const auto &ins : program.instructions)
-  {
-    if(!ins.is_assign())
-      continue;
-    const auto &lhs = ins.assign_lhs();
-    if(lhs.id() != ID_symbol || !lhs.type().get_bool(ID_C_constant))
-      continue;
-    const exprt value = simplify_expr(ins.assign_rhs(), ns);
-    if(value.id() != ID_constant)
-      continue;
-    const irep_idt id = to_symbol_expr(lhs).get_identifier();
-    const auto inserted = const_bindings.emplace(id, value);
-    if(!inserted.second && inserted.first->second != value)
-      conflicting.insert(id);
-  }
-  for(const auto &id : conflicting)
-    const_bindings.erase(id);
-}
-
-exprt memory_accesst::fold_size_expr(const exprt &expr) const
-{
-  if(expr.id() == ID_symbol)
-  {
-    const irep_idt id = to_symbol_expr(expr).get_identifier();
-    const auto found = const_bindings.find(id);
-    if(found != const_bindings.end())
-      return found->second;
-    // Static const globals carry their initializer in the symbol table; the
-    // C type system forbids modifying them through their declared name.
-    const symbolt *symbol = nullptr;
-    if(
-      !ns.lookup(id, symbol) && symbol &&
-      symbol->type.get_bool(ID_C_constant) && symbol->value.is_not_nil())
-    {
-      const exprt value = simplify_expr(symbol->value, ns);
-      if(value.id() == ID_constant)
-        return value;
-    }
-    return expr;
-  }
-  exprt result = expr;
-  for(auto &op : result.operands())
-    op = fold_size_expr(op);
-  return simplify_expr(result, ns);
-}
-
 void memory_accesst::collect(const goto_programt &program)
 {
-  collect_const_bindings(program);
+  logical_arrays.collect(program);
+  check_logical_arrays();
+  if(failed)
+    return;
+  heap.reserved_root_ids = logical_arrays.symbols();
+  promote_unaddressed_objects = has_arbitrary_pointer_input(program, ns);
   for(const auto &ins : program.instructions)
   {
     collect_expr(ins.code());
     if(ins.has_condition())
       collect_expr(ins.condition());
   }
+  if(promote_unaddressed_objects)
+    for(const auto &entry : ns.get_symbol_table().symbols)
+    {
+      const auto &symbol = entry.second;
+      if(is_c_source_object(symbol, ns) && symbol.is_static_lifetime &&
+         (!symbol.is_extern || symbol.value.is_not_nil()))
+        collect_expr(symbol.symbol_expr());
+    }
   // Global initializer addresses can introduce otherwise unreferenced roots.
   std::size_t previous;
   do
@@ -186,14 +297,173 @@ void memory_accesst::collect(const goto_programt &program)
       if(entry.second.static_lifetime)
         collect_expr(entry.second.initializer);
   } while(previous != heap.objects.size());
+  // Reserving logical roots preserves other objects' numeric tags and the
+  // object/offset split; only their physical byte storage is omitted.
+  auto identities = heap.reserved_root_ids;
+  for(const auto &entry : heap.objects)
+    identities.insert(entry.first);
   unsigned tag = 3;
-  for(auto &entry : heap.objects)
-    entry.second.tag = tag++;
+  for(const auto &id : identities)
+  {
+    const auto object = heap.objects.find(id);
+    if(object != heap.objects.end())
+      object->second.tag = tag;
+    else
+      logical_arrays.record_reserved_tag(id, tag);
+    ++tag;
+  }
+  check_logical_arrays();
+  if(failed)
+    return;
+
+  // Re-entry needs a storage-reuse certificate. Capacity planning rejects
+  // unsupported lifetimes before emission, without altering source properties.
+  if(std::any_of(heap.objects.begin(), heap.objects.end(),
+       [](const auto &entry) { return !entry.second.static_lifetime; }))
+  {
+    struct payloadt {};
+    cfg_baset<payloadt> cfg;
+    cfg(program);
+    std::vector<cfg_baset<payloadt>::entryt> components;
+    const auto count = cfg.SCCs(components);
+    std::vector<std::size_t> sizes(count, 0);
+    for(const auto component : components)
+      ++sizes[component];
+    std::set<irep_idt> declared, memory_objects;
+    for(const auto &entry : heap.objects)
+      memory_objects.insert(entry.first);
+    for(auto instruction = program.instructions.begin();
+        instruction != program.instructions.end(); ++instruction)
+    {
+      if(!instruction->is_decl())
+        continue;
+      auto object = heap.objects.find(instruction->decl_symbol().get_identifier());
+      if(object == heap.objects.end() || object->second.static_lifetime)
+        continue;
+      const auto node = cfg.get_node_index(instruction);
+      object->second.recurrent |= !declared.insert(object->first).second ||
+        sizes[components[node]] > 1 || cfg[node].out.count(node) != 0;
+    }
+    for(auto &entry : heap.objects)
+      if(entry.second.recurrent)
+      {
+        const auto size = numeric_cast<mp_integer>(entry.second.size);
+        const auto &symbol = ns.lookup(entry.first);
+        const bool internal_snapshot = symbol.is_auxiliary &&
+          symbol.type.id() == ID_array &&
+          symbol.type.get_bool("C_c2btor_copy_snapshot");
+        entry.second.reuse_certified =
+          ((size && *size >= 0) || heap.supports_runtime_object_reset()) &&
+          automatic_object_reuse_is_safe(
+            program, ns, entry.first, memory_objects, internal_snapshot);
+      }
+  }
   heap.plan_capacity(program);
+  if(heap.failed)
+    error(heap.failure_reason);
+  else if(heap.uses_wide_pointer_offsets())
+    validate_wide_pointer_representation(program);
+}
+
+bool memory_accesst::check_wide_pointer_expression(const exprt &e)
+{
+  if(!heap.uses_wide_pointer_offsets())
+    return true;
+  const auto reject = [&](const std::string &reason) {
+    error("wide-offset pointer representation " + reason);
+    return false;
+  };
+  const auto type = follow_tag_type(e.type(), ns);
+  if(e.id() == ID_constant && type.id() == ID_pointer &&
+     !to_constant_expr(e).is_null_pointer())
+    return reject("cannot represent a non-null machine pointer constant");
+  if(e.id() == ID_side_effect &&
+     (e.get(ID_statement) == ID_nondet || e.get(ID_statement) == ID_va_start) &&
+     contains_pointer(e.type(), ns))
+    return reject("cannot import arbitrary machine pointer values");
+  if(e.id() == ID_typecast)
+  {
+    const auto &operand = to_typecast_expr(e).op();
+    const auto source_type = follow_tag_type(operand.type(), ns);
+    const bool from_pointer = source_type.id() == ID_pointer;
+    const bool to_pointer = type.id() == ID_pointer;
+    const bool to_boolean = type.id() == ID_bool || type.id() == ID_c_bool;
+    if(from_pointer && !to_pointer && !to_boolean)
+      return reject("cannot export hidden object tags through a scalar cast");
+    if(to_pointer && !from_pointer && source_type.id() != ID_array)
+    {
+      const auto value = simplify_expr(operand, ns);
+      if(!value.is_constant() || !to_constant_expr(value).is_zero())
+        return reject("cannot import a non-null integer-to-pointer cast");
+    }
+  }
+  if(e.id() == ID_address_of &&
+     contains_pointer(to_address_of_expr(e).object().type(), ns))
+    return reject("cannot serialize an addressable pointer-bearing object");
+  const bool byte_view = e.id() == ID_byte_extract_little_endian ||
+                        e.id() == ID_byte_extract_big_endian ||
+                        e.id() == ID_byte_update_little_endian ||
+                        e.id() == ID_byte_update_big_endian;
+  const bool bit_view = e.id() == ID_extractbits || e.id() == ID_concatenation ||
+                       e.id() == ID_bswap;
+  if(byte_view || bit_view)
+  {
+    if(contains_pointer(e.type(), ns) ||
+       std::any_of(e.operands().begin(), e.operands().end(),
+         [&](const exprt &operand) {
+           return contains_pointer(operand.type(), ns);
+         }))
+      return reject("cannot expose pointer values as byte or bit sequences");
+  }
+  // Checking only the root object's type misses casts such as
+  // *(void **)char_buffer. The accessed value itself must fit the C layout.
+  if(contains_pointer(e.type(), ns) && owns_lvalue(e))
+    return reject("cannot load or store pointer values through byte memory");
+  return true;
+}
+
+void memory_accesst::validate_wide_pointer_representation(
+  const goto_programt &program)
+{
+  for(const auto &entry : heap.objects)
+    if(contains_pointer(entry.second.type, ns))
+    {
+      error("wide-offset pointer representation cannot serialize "
+            "pointer-bearing object " + id2string(entry.first));
+      return;
+    }
+  const auto inspect = [&](const auto &self, const exprt &e) -> void {
+    if(failed || !check_wide_pointer_expression(e))
+      return;
+    for(const auto &operand : e.operands())
+      self(self, operand);
+  };
+  for(const auto &instruction : program.instructions)
+  {
+    if(instruction.is_function_call() &&
+       instruction.call_function().id() == ID_symbol &&
+       contains_pointer(instruction.call_lhs().type(), ns))
+    {
+      const auto name = id2string(
+        to_symbol_expr(instruction.call_function()).get_identifier());
+      if(name.rfind("__VERIFIER_nondet_", 0) == 0 ||
+         name.rfind("__CPROVER_nondet_", 0) == 0)
+      {
+        error("wide-offset pointer representation cannot import "
+              "arbitrary machine pointer values");
+        return;
+      }
+    }
+    inspect(inspect, instruction.code());
+    if(instruction.has_condition())
+      inspect(inspect, instruction.condition());
+    if(failed)
+      return;
+  }
 }
 bool memory_accesst::owns_symbol(const irep_idt &id) const
 {
-  if(heap.objects.count(id))
+  if(logical_arrays.owns_symbol(id) || heap.objects.count(id))
     return true;
   const auto name = id2string(id);
   for(const auto &entry : heap.objects)
@@ -208,6 +478,8 @@ bool memory_accesst::owns_symbol(const irep_idt &id) const
 }
 bool memory_accesst::owns_lvalue(const exprt &e) const
 {
+  if(logical_arrays.owns_lvalue(e))
+    return true;
   if(e.id() == ID_symbol)
     return heap.objects.count(to_symbol_expr(e).get_identifier()) != 0;
   if(e.id() == ID_dereference)
@@ -229,6 +501,11 @@ void memory_accesst::create_states()
     error(
       heap.failure_reason.empty() ? "object identity capacity exceeded"
                                   : heap.failure_reason);
+  if(!failed)
+  {
+    logical_arrays.create_states();
+    check_logical_arrays();
+  }
 }
 void memory_accesst::initialize_static()
 {
@@ -238,18 +515,50 @@ void memory_accesst::initialize_static()
     if(!object.static_lifetime || object.type.id() == ID_code)
       continue;
     auto size = numeric_cast<mp_integer>(simplify_expr(object.size, ns));
-    if(!size || *size < 0 || *size >= (mp_integer(1) << (heap.offset_bits - 1)))
+    const unsigned extent_bits = heap.offset_bits -
+      (heap.uses_wide_pointer_offsets() ? 0u : 1u);
+    if(!size || *size < 0 || *size >= (mp_integer(1) << extent_bits))
     {
       error("static object size outside representable range");
       continue;
     }
-    heap.activate(object, b.constd(heap.pointer_sort, *size), true);
+    heap.activate(object, b.constd(heap.size_sort, *size), true);
     if(
       object.initializer.is_not_nil() &&
-      !assign_at(heap.base(object.tag), object.type, object.initializer, true))
+      !assign_at(
+        heap.base(object.tag), object.type, object.initializer, true,
+        initial_lvaluet{object.tag, 0}))
       error("static initializer for " + id2string(object.id));
   }
   heap.finish_initialization();
+  logical_arrays.initialize_static();
+  check_logical_arrays();
+}
+void memory_accesst::begin(unsigned pc, btor2_nid_t guard)
+{
+  heap.begin(pc, guard);
+  logical_arrays.begin(pc, guard);
+  check_logical_arrays();
+}
+void memory_accesst::end()
+{
+  heap.end();
+  logical_arrays.end();
+  check_logical_arrays();
+}
+void memory_accesst::finish()
+{
+  heap.finish();
+  logical_arrays.finish();
+  check_logical_arrays();
+}
+json_objectt memory_accesst::metadata() const
+{
+  auto result = heap.metadata();
+  auto logical = logical_arrays.metadata();
+  if(!logical.empty())
+    result["logical_arrays"] = std::move(logical);
+  return result;
 }
 btor2_nid_t memory_accesst::pointer_integer(const exprt &value)
 {
@@ -289,13 +598,6 @@ btor2_nid_t memory_accesst::address(const exprt &e)
   else if(e.id() == ID_dereference)
   {
     auto p = expressions.convert(to_dereference_expr(e).pointer());
-    const auto align = alignment(e.type(), ns);
-    if(p && align > 1)
-      heap.require(b.eq(
-        b.get_bool_sort(),
-        b.urem(
-          heap.offset_sort, heap.offset(p), b.constd(heap.offset_sort, align)),
-        b.zero(heap.offset_sort)));
     return p;
   }
   else if(e.id() == ID_member)
@@ -325,13 +627,7 @@ btor2_nid_t memory_accesst::address(const exprt &e)
       auto p = address(index.array());
       if(!full || !p)
         return 0;
-      auto narrow = b.slice(heap.pointer_sort, full, heap.pointer_bits - 1, 0);
-      heap.require(
-        b.eq(
-          b.get_bool_sort(),
-          full,
-          b.sext(expressions.convert_type(type), narrow, heap.pointer_bits)),
-        true);
+      auto narrow = b.slice(heap.size_sort, full, heap.pointer_bits - 1, 0);
       return heap.add_offset(p, narrow);
     }
   }
@@ -345,6 +641,14 @@ btor2_nid_t memory_accesst::address(const exprt &e)
 
 std::optional<btor2_nid_t> memory_accesst::convert(const exprt &e)
 {
+  if(!check_wide_pointer_expression(e))
+    return 0;
+  auto logical = logical_arrays.convert(e);
+  check_logical_arrays();
+  if(logical.has_value())
+    return logical;
+  if(logical_arrays.failed)
+    return 0;
   if(e.id() == ID_typecast)
   {
     const auto &operand = to_typecast_expr(e).op();
@@ -460,21 +764,23 @@ std::optional<btor2_nid_t> memory_accesst::convert(const exprt &e)
       error("pointer difference layout");
       return 0;
     }
-    heap.require(b.eq(b.get_bool_sort(), heap.tag(left), heap.tag(right)));
-    heap.require(heap.accessible(left, b.zero(heap.pointer_sort), false));
-    heap.require(heap.accessible(right, b.zero(heap.pointer_sort), false));
+    // Hidden offsets cover the full unsigned machine address domain. Extend
+    // them before subtraction, so crossing its sign bit retains the actual
+    // byte difference (e.g. 0x80000000 - 0x7fffffff == 1 on ILP32).
+    const unsigned arithmetic_bits =
+      heap.pointer_bits + (heap.uses_wide_pointer_offsets() ? 1u : 0u);
+    const auto arithmetic_sort = b.get_or_create_bitvec_sort(arithmetic_bits);
+    const auto widen_offset = [&](btor2_nid_t pointer) {
+      return heap.uses_wide_pointer_offsets()
+               ? b.uext(arithmetic_sort, heap.offset(pointer),
+                   arithmetic_bits - heap.offset_bits)
+               : b.sext(arithmetic_sort, heap.offset(pointer),
+                   arithmetic_bits - heap.offset_bits);
+    };
     auto difference = b.sub(
-      heap.pointer_sort,
-      b.sext(
-        heap.pointer_sort,
-        heap.offset(left),
-        heap.pointer_bits - heap.offset_bits),
-      b.sext(
-        heap.pointer_sort,
-        heap.offset(right),
-        heap.pointer_bits - heap.offset_bits));
+      arithmetic_sort, widen_offset(left), widen_offset(right));
     auto result = b.sdiv(
-      heap.pointer_sort, difference, b.constd(heap.pointer_sort, *stride));
+      arithmetic_sort, difference, b.constd(arithmetic_sort, *stride));
     auto width = expressions.get_width(e.type());
     if(!width || *width > heap.pointer_bits)
     {
@@ -482,14 +788,9 @@ std::optional<btor2_nid_t> memory_accesst::convert(const exprt &e)
       return 0;
     }
     auto sort = expressions.convert_type(e.type());
-    auto narrow = *width == heap.pointer_bits
+    auto narrow = *width == arithmetic_bits
                     ? result
                     : b.slice(sort, result, *width - 1, 0);
-    if(*width < heap.pointer_bits)
-      heap.require(b.eq(
-        b.get_bool_sort(),
-        result,
-        b.sext(heap.pointer_sort, narrow, heap.pointer_bits - *width)));
     return narrow;
   }
 
@@ -514,8 +815,8 @@ std::optional<btor2_nid_t> memory_accesst::convert(const exprt &e)
       error("pointer arithmetic stride");
       return 0;
     }
-    // Use twice the pointer width before narrowing: multiplication overflow
-    // must be a model limit, never a silently wrapped displacement.
+    // CBMC pointer arithmetic retains the object and performs modular offset
+    // arithmetic (bv_pointerst::offset_arithmetic).
     auto wide_type = signedbv_typet(2 * heap.pointer_bits);
     exprt delta = mult_exprt(
       typecast_exprt::conditional_cast(*index, wide_type),
@@ -526,12 +827,7 @@ std::optional<btor2_nid_t> memory_accesst::convert(const exprt &e)
     auto p = expressions.convert(*pointer);
     if(!full || !p)
       return 0;
-    auto narrow = b.slice(heap.pointer_sort, full, heap.pointer_bits - 1, 0);
-    auto wide_sort = b.get_or_create_bitvec_sort(2 * heap.pointer_bits);
-    heap.require(
-      b.eq(
-        b.get_bool_sort(), full, b.sext(wide_sort, narrow, heap.pointer_bits)),
-      true);
+    auto narrow = b.slice(heap.size_sort, full, heap.pointer_bits - 1, 0);
     return heap.add_offset(p, narrow);
   }
 
@@ -548,7 +844,7 @@ std::optional<btor2_nid_t> memory_accesst::convert(const exprt &e)
     if(e.id() == ID_pointer_object)
     {
       value = heap.tag(p);
-      width = config.bv_encoding.object_bits;
+      width = heap.object_bits;
     }
     else if(e.id() == ID_pointer_offset)
     {
@@ -578,6 +874,12 @@ std::optional<btor2_nid_t> memory_accesst::convert(const exprt &e)
 
   if(owns_lvalue(e))
   {
+    if(heap.uses_wide_pointer_offsets() && contains_pointer(e.type(), ns))
+    {
+      error("wide-offset pointer representation cannot load pointer values "
+            "from byte memory");
+      return 0;
+    }
     auto width = expressions.get_width(e.type());
     if(!width)
     {
@@ -600,11 +902,59 @@ bool memory_accesst::assign_at(
   btor2_nid_t p,
   const typet &raw_type,
   const exprt &rhs,
-  bool zero_initialized)
+  bool zero_initialized,
+  std::optional<initial_lvaluet> initial_location)
 {
   if(!p)
     return false;
   auto type = follow_tag_type(raw_type, ns);
+  if(heap.uses_wide_pointer_offsets() && contains_pointer(type, ns))
+  {
+    error("wide-offset pointer representation cannot store pointer values "
+          "in byte memory");
+    return false;
+  }
+  const bool aggregate = type.id() == ID_struct || type.id() == ID_union ||
+    type.id() == ID_array;
+  const bool nondet = rhs.id() == ID_side_effect &&
+    rhs.get(ID_statement) == ID_nondet;
+  if(aggregate && (nondet || owns_lvalue(rhs)))
+  {
+    const auto bytes = pointer_offset_size(type, ns);
+    if(!bytes || *bytes < 0 ||
+       *bytes > std::numeric_limits<int>::max() / heap.byte_bits)
+    {
+      error("aggregate value needs a fixed layout within BTOR2 bit-vector width");
+      return false;
+    }
+    if(*bytes == 0)
+      return true;
+    const auto width = numeric_cast_v<unsigned>(*bytes * heap.byte_bits);
+    if(owns_lvalue(rhs))
+    {
+      // Snapshot the complete source representation before updating any
+      // destination field. This includes padding and overlapping aliases.
+      const auto source = address(rhs);
+      if(!source)
+        return false;
+      heap.store(p, heap.load(source, width), width);
+      return true;
+    }
+    // Padding is a fresh arbitrary part of this aggregate value. Typed
+    // fields overwrite this seed below, including canonical C booleans.
+    heap.store(
+      p, b.input(b.get_or_create_bitvec_sort(width), "__aggregate_nondet"),
+      width);
+    if(type.id() == ID_union)
+      return true;
+  }
+  const auto fresh_value = [&](const typet &field_type) -> exprt {
+    const bool c_boolean = follow_tag_type(field_type, ns).id() == ID_c_bool;
+    return typecast_exprt::conditional_cast(
+      side_effect_expr_nondett(
+        c_boolean ? static_cast<typet>(bool_typet()) : field_type,
+        rhs.source_location()), field_type);
+  };
   // Static storage is already zeroed by activate(). Omit only literal
   // all-zero bit patterns, not floating negative zero or runtime writes.
   if(
@@ -632,11 +982,16 @@ bool memory_accesst::assign_at(
       auto off = member_offset(structure, field.get_name(), ns);
       if(!off)
         return false;
-      exprt value = member_exprt(rhs, field.get_name(), field.type());
+      exprt value = nondet
+        ? fresh_value(field.type())
+        : static_cast<exprt>(member_exprt(rhs, field.get_name(), field.type()));
       if(rhs.id() == ID_struct && operand < rhs.operands().size())
         value = rhs.operands()[operand];
       auto q = add_bytes(p, from_integer(*off, size_type()));
-      if(!assign_at(q, field.type(), value, zero_initialized))
+      auto child_location = initial_location;
+      if(child_location)
+        child_location->offset += *off;
+      if(!assign_at(q, field.type(), value, zero_initialized, child_location))
         return false;
     }
     return true;
@@ -664,7 +1019,10 @@ bool memory_accesst::assign_at(
       return true;
     for(mp_integer i = 0; i < *count; ++i)
     {
-      exprt value = index_exprt(rhs, from_integer(i, array.index_type()));
+      exprt value = nondet
+        ? fresh_value(array.element_type())
+        : static_cast<exprt>(index_exprt(
+            rhs, from_integer(i, array.index_type())));
       if(rhs.id() == ID_array_of)
         value = to_array_of_expr(rhs).op();
       else if(rhs.id() == ID_array && i < rhs.operands().size())
@@ -675,11 +1033,15 @@ bool memory_accesst::assign_at(
          array.element_type().id() == ID_unsignedbv ||
          array.element_type().id() == ID_c_bool) && value.is_zero())
         continue;
+      auto child_location = initial_location;
+      if(child_location)
+        child_location->offset += i * *stride;
       if(!assign_at(
            add_bytes(p, from_integer(i * *stride, size_type())),
            array.element_type(),
            value,
-           zero_initialized))
+           zero_initialized,
+           child_location))
         return false;
     }
     return true;
@@ -694,11 +1056,17 @@ bool memory_accesst::assign_at(
     expressions.convert(typecast_exprt::conditional_cast(rhs, raw_type));
   if(!value)
     return false;
-  heap.store(p, value, *width);
+  if(!initial_location || !heap.try_initialize_store(
+       initial_location->tag, initial_location->offset, value, *width))
+    heap.store(p, value, *width);
   return true;
 }
 bool memory_accesst::assign(const exprt &lhs, const exprt &rhs)
 {
+  const auto logical = logical_arrays.assign(lhs, rhs);
+  check_logical_arrays();
+  if(logical || logical_arrays.failed)
+    return true;
   if(!owns_lvalue(lhs))
     return false;
   if(!assign_at(address(lhs), lhs.type(), rhs))
@@ -707,6 +1075,12 @@ bool memory_accesst::assign(const exprt &lhs, const exprt &rhs)
 }
 void memory_accesst::declaration(const symbol_exprt &symbol, bool dead)
 {
+  if(logical_arrays.owns_symbol(symbol.get_identifier()))
+  {
+    logical_arrays.declaration(symbol, dead);
+    check_logical_arrays();
+    return;
+  }
   auto it = heap.objects.find(symbol.get_identifier());
   if(it == heap.objects.end())
     return;
@@ -730,5 +1104,12 @@ btor2_nid_t memory_accesst::allocation(const side_effect_exprt &allocation)
   }
   auto bytes = pointer_integer(allocation.operands()[0]);
   auto zero = expressions.convert(allocation.operands()[1]);
-  return bytes && zero ? heap.allocate(bytes, zero) : 0;
+  const auto zero_initializer = simplify_expr(allocation.operands()[1], ns);
+  return bytes && zero
+           ? heap.allocate(
+               bytes,
+               zero,
+               zero_initializer != false && zero_initializer != 0,
+               &allocation.operands()[0])
+           : 0;
 }

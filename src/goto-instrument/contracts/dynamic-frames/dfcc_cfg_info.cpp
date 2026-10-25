@@ -235,8 +235,7 @@ static bool is_assigned(dirtyt &dirty, const irep_idt &ident, assignst assigns)
     {
       if(
         root_object.id() == ID_symbol &&
-        expr_try_dynamic_cast<symbol_exprt>(root_object)->get_identifier() ==
-          ident)
+        expr_try_dynamic_cast<symbol_exprt>(root_object)->identifier() == ident)
       {
         return true;
       }
@@ -411,12 +410,18 @@ static dfcc_loop_infot gen_dfcc_loop_info(
     message_handler,
     ns);
 
-  // Exclude locals of inner nested loops.
+  // Exclude locals of inner nested loops that are abstracted by a contract.
+  // Locals of skipped (contract-less) inner loops are kept, because such loops
+  // are not abstracted and share the enclosing scope's write set; their locals
+  // must therefore be considered local to this scope (otherwise assignments to
+  // them would be checked against this scope's write set and fail).
   for(const auto &inner_loop : loop_nesting_graph.get_predecessors(loop_id))
   {
     INVARIANT(
       loop_info_map.find(inner_loop) != loop_info_map.end(),
       "DFCC should gen_dfcc_loop_info for inner loops first.");
+    if(loop_info_map.at(inner_loop).must_skip())
+      continue;
     for(const auto &inner_local : loop_info_map.at(inner_loop).local)
     {
       loop_locals.erase(inner_local);
@@ -595,8 +600,16 @@ dfcc_cfg_infot::dfcc_cfg_infot(
       target != goto_function.body.instructions.end();
       target++)
   {
-    if(target->is_decl() && dfcc_is_loop_top_level(target))
-      top_level_local.insert(target->decl_symbol().get_identifier());
+    // A DECL belongs to the top level either when it is directly at the top
+    // level, or when it is declared inside a skipped (contract-less) loop whose
+    // enclosing non-skipped scope is the top level. Such loops are not
+    // abstracted and share the top-level write set, so their locals must be
+    // considered top-level locals.
+    if(
+      target->is_decl() &&
+      is_top_level_id(get_first_id_not_skipped_or_top_level_id(
+        dfcc_get_loop_id(target).value())))
+      top_level_local.insert(target->decl_symbol().identifier());
   }
 
   top_level_tracked =
@@ -683,7 +696,7 @@ dfcc_cfg_infot::get_tracked_set(goto_programt::const_targett target) const
   PRECONDITION(
     loop_id_opt.has_value() &&
     is_valid_loop_or_top_level_id(loop_id_opt.value()));
-  auto loop_id = loop_id_opt.value();
+  auto loop_id = get_first_id_not_skipped_or_top_level_id(loop_id_opt.value());
   if(is_top_level_id(loop_id))
   {
     return top_level_tracked;
@@ -701,7 +714,7 @@ dfcc_cfg_infot::get_local_set(goto_programt::const_targett target) const
   PRECONDITION(
     loop_id_opt.has_value() &&
     is_valid_loop_or_top_level_id(loop_id_opt.value()));
-  auto loop_id = loop_id_opt.value();
+  auto loop_id = get_first_id_not_skipped_or_top_level_id(loop_id_opt.value());
   if(is_top_level_id(loop_id))
   {
     return top_level_local;
@@ -773,8 +786,8 @@ bool dfcc_cfg_infot::must_track_decl_or_dead(
   goto_programt::const_targett target) const
 {
   PRECONDITION(target->is_decl() || target->is_dead());
-  auto &ident = target->is_decl() ? target->decl_symbol().get_identifier()
-                                  : target->dead_symbol().get_identifier();
+  auto &ident = target->is_decl() ? target->decl_symbol().identifier()
+                                  : target->dead_symbol().identifier();
   auto &tracked = get_tracked_set(target);
   return tracked.find(ident) != tracked.end();
 }
@@ -805,7 +818,7 @@ static bool must_check_lhs_from_local_and_tracked(
       // non-tracked identifiers the check will fail but this is sound anyway.
       return true;
     }
-    const auto &id = to_symbol_expr(expr).get_identifier();
+    const auto &id = to_symbol_expr(expr).identifier();
     if(dfcc_is_cprover_static_symbol(id))
     {
       // Skip the check if we have a single cprover symbol as root object

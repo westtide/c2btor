@@ -178,6 +178,9 @@ ai_baset::entry_state(const goto_functionst &goto_functions)
 
 ai_baset::trace_ptrt ai_baset::entry_state(const goto_programt &goto_program)
 {
+  if(goto_program.empty())
+    return nullptr;
+
   // The first instruction of 'goto_program' is the entry point
   trace_ptrt p = history_factory->epoch(goto_program.instructions.begin());
   get_state(p).make_entry();
@@ -465,7 +468,7 @@ bool ai_baset::visit_function_call(
     if(callee_expression.id() == ID_symbol)
     {
       const irep_idt &callee_function_id =
-        to_symbol_expr(callee_expression).get_identifier();
+        to_symbol_expr(callee_expression).identifier();
 
       log.progress() << "Calling " << callee_function_id << messaget::eom;
 

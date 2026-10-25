@@ -1,8 +1,11 @@
+// SPDX-License-Identifier: BSD-4-Clause
+// SPDX-FileCopyrightText: 2026 C2BTOR contributors
+
 /*******************************************************************\
 
 Module: 表达式到 BTOR2 的转换 - 实现
 
-Author: Based on CBMC project
+Authors: C2BTOR contributors; CBMC attribution is retained in LICENSES/
 
 \*******************************************************************/
 
@@ -125,6 +128,8 @@ std::optional<std::size_t> expr_to_btor2t::get_width(const typet &type) const
   // 指针类型
   if(type.id() == ID_pointer)
   {
+    if(pointer_value_width)
+      return pointer_value_width;
     std::size_t width = to_pointer_type(type).get_width();
     if(width < 32)
       width = 32;
@@ -534,6 +539,10 @@ btor2_nid_t expr_to_btor2t::convert(const exprt &expr)
   {
     result = convert_floatbv_typecast(to_floatbv_typecast_expr(expr));
   }
+  else if(expr.id() == ID_floatbv_round_to_integral)
+  {
+    result = convert_float_round_to_integral(expr);
+  }
   //--- semantic floating-point arithmetic ---
   else if(
     expr.id() == ID_floatbv_plus || expr.id() == ID_floatbv_minus ||
@@ -737,7 +746,10 @@ btor2_nid_t expr_to_btor2t::convert_nondet(const side_effect_exprt &expr)
   }
 
   const std::string name = "nondet_" + std::to_string(nondet_counter++);
-  return builder.input(sort, name);
+  const auto input = builder.input(sort, name);
+  if(track_event_inputs)
+    event_input_nodes.push_back(input);
+  return input;
 }
 
 btor2_nid_t expr_to_btor2t::unsupported_pointer_input(

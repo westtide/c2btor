@@ -47,7 +47,7 @@ endif
 OSX_IDENTITY="Developer ID Application: Daniel Kroening"
 
 # Detailed version information
-CBMC_VERSION = 6.7.1
+CBMC_VERSION = 6.11.0
 
 # C2BTOR product release; independent of the reused CBMC frontend.
 C2BTOR_VERSION = 2.0.0

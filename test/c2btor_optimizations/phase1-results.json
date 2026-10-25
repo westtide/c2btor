@@ -1,0 +1,252 @@
+{
+  "stage": 1,
+  "switch": "--goto-btor2-optimize-state",
+  "default": "off",
+  "model_checking_run": false,
+  "sample_scope": "770 original records; explicit direct-recursion exclusion shown separately",
+  "recursive_cases_excluded": [
+    "bitvector-regression/recHanoi03-1.c",
+    "loop-industry-pattern/ofuf_1.c",
+    "loop-industry-pattern/ofuf_2.c",
+    "loop-industry-pattern/ofuf_3.c"
+  ],
+  "tool": {
+    "path": "/Users/west/Developer/cbmc/test/c2btor_optimizations/results/phase1-reviewed-snapshot/c2btor",
+    "sha256": "f1d18b8f3cc3eb7081456b33eb7d4b713e5559f1879afa1bfa7a65b1634279b3"
+  },
+  "unit_tests": {
+    "assertions": 288,
+    "test_cases": 31
+  },
+  "finite_regressions": {
+    "passed": 138,
+    "model_parser_simulation_passed": 135,
+    "expected_off_capacity_rejections": 3
+  },
+  "witness_roundtrips": {
+    "passed": 12,
+    "solver_run": false,
+    "cpachecker_run": false
+  },
+  "encodings": {
+    "bv": {
+      "before": {
+        "all_770": {
+          "pass": 554,
+          "conversion_error": 216
+        },
+        "non_recursive_766": {
+          "pass": 553,
+          "conversion_error": 213
+        },
+        "successful_model_totals": {
+          "state_count": 12861,
+          "bitvec_state_bits": 5787498268,
+          "array_state_count": 0,
+          "instruction_positions": 108343,
+          "pc_positions": 30942,
+          "active_pc_entries": 30942,
+          "pc_equality_guards": 32486,
+          "numeric_nodes": 2194470,
+          "read_ops": 0,
+          "write_ops": 0,
+          "model_bytes": 50317703
+        }
+      },
+      "after": {
+        "all_770": {
+          "pass": 554,
+          "conversion_error": 216
+        },
+        "non_recursive_766": {
+          "pass": 553,
+          "conversion_error": 213
+        },
+        "successful_model_totals": {
+          "state_count": 5526,
+          "bitvec_state_bits": 5761691244,
+          "array_state_count": 0,
+          "instruction_positions": 107500,
+          "pc_positions": 30775,
+          "active_pc_entries": 30680,
+          "pc_equality_guards": 32224,
+          "numeric_nodes": 1477176,
+          "read_ops": 0,
+          "write_ops": 0,
+          "model_bytes": 33031876
+        }
+      },
+      "reductions_percent": {
+        "state_count": 57.03,
+        "pc_positions": 0.54,
+        "numeric_nodes": 32.69,
+        "model_bytes": 34.35
+      }
+    },
+    "array": {
+      "before": {
+        "all_770": {
+          "pass": 554,
+          "conversion_error": 216
+        },
+        "non_recursive_766": {
+          "pass": 553,
+          "conversion_error": 213
+        },
+        "successful_model_totals": {
+          "state_count": 12890,
+          "bitvec_state_bits": 248156,
+          "array_state_count": 977,
+          "instruction_positions": 108343,
+          "pc_positions": 30942,
+          "active_pc_entries": 30942,
+          "pc_equality_guards": 32486,
+          "numeric_nodes": 3001416,
+          "read_ops": 24043,
+          "write_ops": 18888,
+          "model_bytes": 70052305
+        }
+      },
+      "after": {
+        "all_770": {
+          "pass": 554,
+          "conversion_error": 216
+        },
+        "non_recursive_766": {
+          "pass": 553,
+          "conversion_error": 213
+        },
+        "successful_model_totals": {
+          "state_count": 5120,
+          "bitvec_state_bits": 129916,
+          "array_state_count": 502,
+          "instruction_positions": 107500,
+          "pc_positions": 30775,
+          "active_pc_entries": 30680,
+          "pc_equality_guards": 32224,
+          "numeric_nodes": 2234524,
+          "read_ops": 22889,
+          "write_ops": 18774,
+          "model_bytes": 51773340
+        }
+      },
+      "reductions_percent": {
+        "state_count": 60.28,
+        "pc_positions": 0.54,
+        "numeric_nodes": 25.55,
+        "model_bytes": 26.09
+      }
+    },
+    "mixed": {
+      "before": {
+        "all_770": {
+          "pass": 554,
+          "conversion_error": 216
+        },
+        "non_recursive_766": {
+          "pass": 553,
+          "conversion_error": 213
+        },
+        "successful_model_totals": {
+          "state_count": 12877,
+          "bitvec_state_bits": 281724,
+          "array_state_count": 862,
+          "instruction_positions": 108343,
+          "pc_positions": 30942,
+          "active_pc_entries": 30942,
+          "pc_equality_guards": 32486,
+          "numeric_nodes": 2995429,
+          "read_ops": 20613,
+          "write_ops": 18450,
+          "model_bytes": 69910825
+        }
+      },
+      "after": {
+        "all_770": {
+          "pass": 554,
+          "conversion_error": 216
+        },
+        "non_recursive_766": {
+          "pass": 553,
+          "conversion_error": 213
+        },
+        "successful_model_totals": {
+          "state_count": 5139,
+          "bitvec_state_bits": 153100,
+          "array_state_count": 447,
+          "instruction_positions": 107500,
+          "pc_positions": 30775,
+          "active_pc_entries": 30680,
+          "pc_equality_guards": 32224,
+          "numeric_nodes": 2231774,
+          "read_ops": 20531,
+          "write_ops": 18450,
+          "model_bytes": 51695240
+        }
+      },
+      "reductions_percent": {
+        "state_count": 60.09,
+        "pc_positions": 0.54,
+        "numeric_nodes": 25.49,
+        "model_bytes": 26.06
+      }
+    }
+  },
+  "new_conversion_failures": [],
+  "bad_count_mismatches": [],
+  "constraint_count_increases": [],
+  "pre_state_pointer_guard_cases": 230,
+  "after_failure_taxonomy_per_encoding": {
+    "runtime_object_byte_capacity": 55,
+    "allocation_byte_capacity": 138,
+    "no_selected_source_property": 1,
+    "automatic_object_lifetime": 21,
+    "allocation_count": 1
+  },
+  "limits": [
+    "Pointer/string programs skip pre-state rewrites; post-generation dependency pruning remains active.",
+    "Existing allocation byte limits and lifetime/count certification remain enforced.",
+    "Parser acceptance and finite regressions are not a semantic equivalence proof."
+  ],
+  "evidence_directories": [
+    "results/phase1-reviewed-lab1-full",
+    "results/phase1-reviewed-regressions",
+    "results/phase1-reviewed-witness-smoke"
+  ],
+  "benchmark_command": {
+    "before": "/Users/west/Developer/cbmc/test/c2btor_optimizations/results/phase1-reviewed-snapshot/c2btor",
+    "after": "/Users/west/Developer/cbmc/test/c2btor_optimizations/results/phase1-reviewed-snapshot/c2btor",
+    "before_arg": [],
+    "after_arg": [
+      "--goto-btor2-optimize-state"
+    ],
+    "common_arg": [
+      "-I",
+      "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include"
+    ],
+    "catbtor": "/Users/west/Developer/btor2tools/build/bin/catbtor",
+    "btorsim": null,
+    "output_dir": "/Users/west/Developer/cbmc/test/c2btor_optimizations/results/phase1-reviewed-lab1-full",
+    "mode": "metrics",
+    "configs": [
+      "bv",
+      "array",
+      "mixed"
+    ],
+    "architectures": "32,64",
+    "regression_manifest": "/Users/west/Developer/cbmc/test/c2btor_optimizations/cases.json",
+    "dataset": "/Users/west/Developer/cbmc/test/lab1-data",
+    "records": "/Users/west/Downloads/Lab1_btor_v8_records.csv",
+    "aiob_headers": "/private/tmp/c2btor-aiob-size-audit-fgx6ct9k/linux_compatible_headers",
+    "cases_file": null,
+    "case_filter": [],
+    "limit": null,
+    "frames": 256,
+    "workers": 3,
+    "conversion_timeout": 60,
+    "parser_timeout": 30,
+    "simulation_timeout": 30,
+    "memory_gib": 4,
+    "max_model_mib": 128
+  }
+}
