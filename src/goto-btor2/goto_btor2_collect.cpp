@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: BSD-4-Clause
+// SPDX-FileCopyrightText: 2026 C2BTOR contributors
+
 // One scalar state per value; all addressable objects use shared byte memory.
 #include <util/find_symbols.h>
 #include <util/symbol.h>
@@ -34,6 +37,9 @@ std::string normalize_name(const irep_idt &id)
 bool goto_to_btor2_convertert::collect_variables()
 {
   find_symbols_sett referenced;
+  referenced.insert(
+    scalar_projection_report.forced_static_symbols.begin(),
+    scalar_projection_report.forced_static_symbols.end());
   for(const auto &instruction : program.instructions)
   {
     find_symbols(instruction.code(), referenced);
@@ -112,8 +118,12 @@ bool goto_to_btor2_convertert::collect_locations()
       // 条件跳转：有两个后继（目标和 fall-through）
       if(!instr.condition().is_true())
       {
-        info.successors.push_back(loc + 1); // fall-through
+        info.successors.push_back(
+          loc + 1 < locations.size() ? loc + 1 : loc); // encoded fall-through
       }
+
+      if(instr.targets.empty())
+        info.successors.push_back(loc);
 
       // 处理跳转目标
       for(const auto &target : instr.targets)
@@ -133,7 +143,8 @@ bool goto_to_btor2_convertert::collect_locations()
     }
     else if(instr.is_end_function())
     {
-      // 函数结束没有后继
+      // The converter advances END_FUNCTION, then self-loops at the end.
+      info.successors.push_back(loc + 1 < locations.size() ? loc + 1 : loc);
     }
     else
     {
@@ -142,6 +153,8 @@ bool goto_to_btor2_convertert::collect_locations()
       {
         info.successors.push_back(loc + 1);
       }
+      else
+        info.successors.push_back(loc);
     }
   }
 
@@ -153,3 +166,65 @@ bool goto_to_btor2_convertert::collect_locations()
 //===========================================================================
 // VLA 上界提取
 //===========================================================================
+
+void goto_to_btor2_convertert::classify_block_states()
+{
+  find_symbols_sett forced;
+  // Initializers are evaluated outside the runtime block environment.
+  for(const auto &entry : variables)
+    if(entry.second.has_initializer)
+      find_type_and_expr_symbols(entry.second.initializer, forced);
+  for(const auto &entry : memory.heap.objects)
+    if(entry.second.static_lifetime)
+      find_type_and_expr_symbols(entry.second.initializer, forced);
+  // Follow namespace type tags as well as direct initializer dimensions.
+  find_symbols_sett checked;
+  for(;;)
+  {
+    auto pending = forced;
+    bool changed = false;
+    for(const auto &id : pending)
+      if(checked.insert(id).second)
+      {
+        changed = true;
+        const symbolt *symbol = nullptr;
+        if(!ns.lookup(id, symbol) && symbol)
+          find_type_and_expr_symbols(symbol->type, forced);
+      }
+    if(!changed)
+      break;
+  }
+  // Singleton nondet calls retain result states for source-map replay.
+  for(const auto &instruction : program.instructions)
+  {
+    const exprt *lhs = nullptr;
+    if(instruction.is_function_call())
+      lhs = &instruction.call_lhs();
+    else if(instruction.is_assign() &&
+            instruction.assign_rhs().id() == ID_side_effect)
+      lhs = &instruction.assign_lhs();
+    if(lhs)
+      find_symbols(*lhs, forced);
+  }
+  for(const auto &id : variable_order)
+  {
+    const auto &var = variables.at(id);
+    const symbolt *symbol = nullptr;
+    const auto type_id = var.type.id();
+    if(!forced.count(id) && !ns.lookup(id, symbol) && symbol &&
+       !symbol->is_static_lifetime && !var.has_initializer &&
+       !var.scalarized_fixed_array && !var.type.get_bool(ID_C_volatile) &&
+       !var.type.get_bool(ID_C_atomic) &&
+       (type_id == ID_bool || type_id == ID_c_bool ||
+        type_id == ID_signedbv || type_id == ID_unsignedbv))
+      block_candidate_symbols.insert(id);
+  }
+  std::map<unsigned, std::vector<unsigned>> successors;
+  for(const auto &entry : locations)
+    successors.emplace(entry.first, entry.second.successors);
+  block_liveness = classify_scalar_block_state(
+    program, ns, blocks, block_candidate_symbols, successors);
+  log.status() << "Scalar block liveness: "
+               << block_liveness.local_symbols.size()
+               << " automatic values need no state" << messaget::eom;
+}

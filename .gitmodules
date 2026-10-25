@@ -1,0 +1,4 @@
+[submodule "checkers/carat"]
+	path = checkers/carat
+	url = https://github.com/westtide/carat-witness.git
+	branch = main

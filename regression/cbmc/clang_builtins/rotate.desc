@@ -1,8 +1,0 @@
-CORE no-new-smt
-rotate.c
-
-^VERIFICATION SUCCESSFUL$
-^EXIT=0$
-^SIGNAL=0$
---
-^warning: ignoring

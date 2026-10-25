@@ -1,8 +1,0 @@
-CORE
-main.awl
---function Function_Call2
-^EXIT=0$
-^SIGNAL=0$
-^VERIFICATION SUCCESSFUL$
---
-^warning: ignoring

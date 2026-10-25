@@ -1,9 +1,0 @@
-CORE
-main.c
---vsd --vsd-arrays every-element
-arr\[0\] :=
-arr\[1\] :=
-arr\[.*nondet.*\] :=
-^SIGNAL=0$
-^EXIT=0$
---

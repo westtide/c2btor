@@ -497,6 +497,41 @@ std::optional<exprt> size_of_expr(const typet &type, const namespacet &ns)
     return {};
 }
 
+bool is_zero_width(const typet &type, const namespacet &ns)
+{
+  if(type.id() == ID_empty)
+    return true;
+  else if(type.id() == ID_struct_tag)
+    return is_zero_width(ns.follow_tag(to_struct_tag_type(type)), ns);
+  else if(type.id() == ID_union_tag)
+    return is_zero_width(ns.follow_tag(to_union_tag_type(type)), ns);
+  else if(type.id() == ID_c_enum_tag)
+    return is_zero_width(ns.follow_tag(to_c_enum_tag_type(type)), ns);
+  else if(type.id() == ID_c_enum)
+    return is_zero_width(to_c_enum_type(type).subtype(), ns);
+  else if(type.id() == ID_struct || type.id() == ID_union)
+  {
+    for(const auto &comp : to_struct_union_type(type).components())
+    {
+      if(!is_zero_width(comp.type(), ns))
+        return false;
+    }
+    return true;
+  }
+  else if(auto array_type = type_try_dynamic_cast<array_typet>(type))
+  {
+    // we ignore array_type->size().is_zero() for now as there may be
+    // out-of-bounds accesses that we need to model
+    return is_zero_width(array_type->element_type(), ns);
+  }
+  else if(auto bv_type = type_try_dynamic_cast<bitvector_typet>(type))
+  {
+    return bv_type->width() == 0;
+  }
+  else
+    return false;
+}
+
 std::optional<mp_integer>
 compute_pointer_offset(const exprt &expr, const namespacet &ns)
 {
@@ -722,6 +757,9 @@ std::optional<exprt> get_subexpression_at_offset(
         return {};
       }
 
+      const mp_integer elem_size_bytes =
+        *elem_size_bits / config.ansi_c.char_width;
+
       // If we have an offset C + x (where C is a constant) we can try to
       // recurse by first looking at the member at offset C.
       if(
@@ -766,14 +804,12 @@ std::optional<exprt> get_subexpression_at_offset(
         const exprt &other_factor =
           mul.op0().is_constant() ? mul.op1() : mul.op0();
 
-        if(const_factor % (*elem_size_bits / config.ansi_c.char_width) != 0)
+        if(const_factor % elem_size_bytes != 0)
           return {};
 
         exprt index = mult_exprt{
           other_factor,
-          from_integer(
-            const_factor / (*elem_size_bits / config.ansi_c.char_width),
-            other_factor.type())};
+          from_integer(const_factor / elem_size_bytes, other_factor.type())};
 
         return get_subexpression_at_offset(
           index_exprt{
@@ -798,14 +834,40 @@ std::optional<exprt> get_subexpression_at_offset(
       const exprt &other_factor =
         offset_mult.op0().is_constant() ? offset_mult.op1() : offset_mult.op0();
 
-      if(const_factor % (*elem_size_bits / config.ansi_c.char_width) != 0)
+      if(
+        *target_size_bits < *elem_size_bits && const_factor > 0 &&
+        const_factor < elem_size_bytes && elem_size_bytes % const_factor == 0)
+      {
+        // Decompose the flat index into outer and inner indices using
+        // integer division and remainder. This is correct because
+        // multi-dimensional arrays are laid out contiguously, so
+        // flat_offset = k * const_factor maps to array[k / divider] at
+        // remaining offset (k % divider) * const_factor within that
+        // element. An inner index exceeding the inner dimension simply
+        // wraps to the next element, which is the correct flat-layout
+        // semantics.
+        const mp_integer index_divider = elem_size_bytes / const_factor;
+        exprt index = div_exprt{
+          other_factor, from_integer(index_divider, other_factor.type())};
+        exprt remaining_offset = mult_exprt{
+          mod_exprt{
+            other_factor, from_integer(index_divider, other_factor.type())},
+          from_integer(const_factor, other_factor.type())};
+
+        return get_subexpression_at_offset(
+          index_exprt{
+            expr,
+            typecast_exprt::conditional_cast(index, array_type->index_type())},
+          remaining_offset,
+          target_type,
+          ns);
+      }
+      else if(const_factor % elem_size_bytes != 0)
         return {};
 
       exprt index = mult_exprt{
         other_factor,
-        from_integer(
-          const_factor / (*elem_size_bits / config.ansi_c.char_width),
-          other_factor.type())};
+        from_integer(const_factor / elem_size_bytes, other_factor.type())};
 
       return get_subexpression_at_offset(
         index_exprt{
@@ -857,6 +919,32 @@ std::optional<exprt> get_subexpression_at_offset(
         }
       }
 
+      return {};
+    }
+    else if(expr.type().id() == ID_union || expr.type().id() == ID_union_tag)
+    {
+      // For union-typed expressions with non-constant offset, access
+      // through the widest member to avoid expensive byte_extract lowering.
+      // This is safe when the widest member covers the full union (no
+      // trailing padding beyond it), since all members start at offset 0.
+      if(expr.id() == ID_symbol || expr.id() == ID_member)
+      {
+        const union_typet &union_type =
+          expr.type().id() == ID_union_tag
+            ? ns.follow_tag(to_union_tag_type(expr.type()))
+            : to_union_type(expr.type());
+
+        const auto union_size = pointer_offset_bits(union_type, ns);
+        const auto widest_member = union_type.find_widest_union_component(ns);
+        if(
+          widest_member.has_value() && union_size.has_value() &&
+          widest_member->second == *union_size)
+        {
+          const member_exprt member(
+            expr, widest_member->first.get_name(), widest_member->first.type());
+          return get_subexpression_at_offset(member, offset, target_type, ns);
+        }
+      }
       return {};
     }
     else

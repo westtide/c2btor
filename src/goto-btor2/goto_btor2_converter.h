@@ -1,8 +1,11 @@
+// SPDX-License-Identifier: BSD-4-Clause
+// SPDX-FileCopyrightText: 2026 C2BTOR contributors
+
 /*******************************************************************\
 
 Module: Goto 程序到 BTOR2 的转换 - 转换器类声明
 
-Author: Based on CBMC project
+Authors: C2BTOR contributors; CBMC attribution is retained in LICENSES/
 
 \*******************************************************************/
 
@@ -27,6 +30,12 @@ Author: Based on CBMC project
 #include "expr_to_btor2.h"
 #include "memory_access.h"
 #include "property_options.h"
+#include "scalar_projection.h"
+#include "optimization_options.h"
+#include "scalar_block_liveness.h"
+#include "pre_state_optimization.h"
+#include "array_loop_summary.h"
+#include "scalar_loop_summary.h"
 
 #include <goto-programs/goto_program.h>
 #include <util/message.h>
@@ -89,6 +98,7 @@ struct variable_infot
   typet logical_type;             ///< 逻辑类型（展平前）
   btor2_nid_t sort_nid = 0;       ///< BTOR2 类型节点 ID
   btor2_nid_t state_nid = 0;      ///< BTOR2 状态变量节点 ID
+  btor2_nid_t local_nid = 0;      ///< Typed placeholder for proven block-local values
   btor2_nid_t init_nid = 0;       ///< BTOR2 初始值节点 ID
   bool has_initializer = false;   ///< 是否有静态初始值
   exprt initializer;              ///< 初始值表达式
@@ -109,6 +119,14 @@ struct location_infot
   btor2_nid_t pc_guard = 0;
   btor2_nid_t bad_node = 0;
   btor2_nid_t bad_condition_node = 0;
+  btor2_nid_t bad_condition_output = 0;
+  btor2_nid_t executed_output = 0;
+  btor2_nid_t value_node = 0;
+  btor2_nid_t value_sort = 0;
+  btor2_nid_t value_output = 0;
+  btor2_nid_t summary_input_node = 0;
+  btor2_nid_t witness_counter_node = 0;
+  std::vector<btor2_nid_t> input_nodes;
 };
 
 /// 断言信息：存储断言的条件、位置和属性名称
@@ -131,25 +149,31 @@ public:
     bool _emit_warning_comments,
     unsigned heap_objects,
     array_encoding_optionst _array_encoding,
-    btor2_property_optionst _properties)
-    : program(_program),
-      ns(_symbol_table),
+    btor2_property_optionst _properties,
+    bool _large_block_encoding,
+    scalar_projection_modet _scalar_projection,
+    btor2_optimization_optionst _optimizations = {})
+    : ns(_symbol_table),
       log(_log),
       emit_warning_comments(_emit_warning_comments),
       array_encoding(_array_encoding),
       property_options(std::move(_properties)),
+      large_block_encoding(_large_block_encoding),
+      scalar_projection(_scalar_projection),
+      optimizations(_optimizations),
       expr_converter(builder, ns, log, _emit_warning_comments),
-      memory(builder, expr_converter, ns, log, heap_objects, _array_encoding)
+      memory(
+        builder, expr_converter, ns, log, heap_objects, _array_encoding,
+        _optimizations.logical_arrays)
   {
-    memory.heap.emit_guard_properties = !property_options.no_heap_guards;
-    memory.heap.emit_bad_properties = !property_options.reach_only;
+    program.copy_from(_program);
   }
 
   /// 执行完整的转换流程，将 BTOR2 输出到 out
   bool convert(std::ostream &out, std::ostream *source_map = nullptr);
 
 private:
-  const goto_programt &program;  ///< 要转换的 goto 程序
+  goto_programt program;       ///< Owned copy; optional scalar projection.
   const namespacet ns;           ///< 命名空间
   messaget &log;                 ///< 消息处理器
 
@@ -157,6 +181,21 @@ private:
   bool conversion_had_errors = false; ///< 不完整语义阻止 BTOR2 输出
   array_encoding_optionst array_encoding;
   btor2_property_optionst property_options;
+  bool large_block_encoding = false;
+  scalar_projection_modet scalar_projection = scalar_projection_modet::NONE;
+  scalar_projection_reportt scalar_projection_report;
+  btor2_optimization_optionst optimizations;
+  pre_state_optimization_reportt pre_state_report;
+  array_loop_summary_reportt array_summary_report;
+  scalar_loop_summary_reportt scalar_summary_report;
+  std::size_t uniform_array_reads_pruned = 0;
+  std::size_t equal_array_comparisons_pruned = 0;
+  btor2_buildert::dependency_pruning_reportt dependency_report;
+  // Original instruction IDs remain stable; only the runtime PC is compacted.
+  std::vector<std::vector<unsigned>> blocks;
+  std::map<unsigned, unsigned> location_to_block;
+  std::set<irep_idt> block_candidate_symbols;
+  scalar_block_liveness_reportt block_liveness;
   json_arrayt property_metadata;
   btor2_buildert builder;            ///< BTOR2 指令构建器
   expr_to_btor2t expr_converter;     ///< 表达式转换器
@@ -167,9 +206,12 @@ private:
   void warn(const std::string &msg);
   void conversion_error(const std::string &msg);
   void write_source_map(std::ostream &out) const;
+  void create_witness_counters();
 
   std::map<irep_idt, variable_infot> variables;  ///< 收集到的所有变量
   std::vector<irep_idt> variable_order;           ///< 变量声明顺序
+  /// Disjunction of the selected source violations; zero when not merged.
+  btor2_nid_t source_disjunction_nid = 0;
 
   std::map<unsigned, location_infot> locations;   ///< 所有 PC 位置
   std::vector<unsigned> location_order;            ///< 位置编号顺序
@@ -178,10 +220,11 @@ private:
 
   btor2_nid_t pc_sort_nid = 0;   ///< PC 类型的节点 ID
   btor2_nid_t pc_state_nid = 0;  ///< PC 状态变量的节点 ID
+  btor2_nid_t pc_output_nid = 0; ///< Named combinational witness observation.
   std::size_t pc_bits = 0;       ///< PC 的位宽
 
   std::vector<assertion_infot> assertions;                 ///< 所有断言
-  std::vector<std::pair<unsigned, exprt>> assumptions;     ///< 所有假设
+  std::vector<std::pair<unsigned, btor2_nid_t>> assumptions; ///< Converted assumptions
 
   /// 条件状态更新映射：变量 → [(条件, 新值), ...]
   /// 逆序遍历构建 ITE 链以保留"后者覆盖前者"的语义
@@ -204,6 +247,7 @@ private:
 
   bool collect_variables();
   bool collect_locations();
+  void classify_block_states();
 
   void create_sorts();
   void create_states();
@@ -213,6 +257,11 @@ private:
   btor2_nid_t make_pc_equals(unsigned loc);
 
   void process_instructions();
+  void plan_blocks();
+  bool lbe_expression(const exprt &) const;
+  bool lbe_instruction(unsigned) const;
+  void process_block(const std::vector<unsigned> &);
+  void emit_lbe_observations();
   void process_assign(
     unsigned loc,
     btor2_nid_t at_loc,

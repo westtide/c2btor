@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: BSD-4-Clause
+// SPDX-FileCopyrightText: 2026 C2BTOR contributors
+
 #include "simplify_callback_targets.h"
 
 #include <util/arith_tools.h>
@@ -353,15 +356,9 @@ void simplify_callback_targets(
       for(auto it = program.instructions.begin();
           it != program.instructions.end(); ++it)
       {
-        bool is_error_call = false;
-        if(it->is_function_call() && it->call_function().id() == ID_symbol)
-        {
-          const auto callee =
-            id2string(to_symbol_expr(it->call_function()).get_identifier());
-          is_error_call = callee.find("__assert_fail") != std::string::npos ||
-                          callee.find("reach_error") != std::string::npos;
-        }
-        if(it->is_assert() || is_error_call)
+        // Error-function selection has already produced ASSERTs. Reachability
+        // simplification must not infer properties from residual function names.
+        if(it->is_assert())
           assertions.emplace_back(it, it->source_location());
       }
     remove_unreachable(program);

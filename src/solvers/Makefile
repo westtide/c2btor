@@ -93,7 +93,6 @@ SRC = $(BOOLEFORCE_SRC) \
       flattening/boolbv_bv_rel.cpp \
       flattening/boolbv_byte_extract.cpp \
       flattening/boolbv_byte_update.cpp \
-      flattening/boolbv_case.cpp \
       flattening/boolbv_complex.cpp \
       flattening/boolbv_concatenation.cpp \
       flattening/boolbv_cond.cpp \
@@ -103,6 +102,7 @@ SRC = $(BOOLEFORCE_SRC) \
       flattening/boolbv_equality.cpp \
       flattening/boolbv_extractbit.cpp \
       flattening/boolbv_extractbits.cpp \
+      flattening/boolbv_floatbv_fma.cpp \
       flattening/boolbv_floatbv_mod_rem.cpp \
       flattening/boolbv_floatbv_op.cpp \
       flattening/boolbv_get.cpp \
@@ -282,7 +282,8 @@ solvers$(LIBEXT): $(OBJ) $(SOLVER_LIB)
 	$(LINKLIB)
 
 ../../cadical/build/libcadical$(LIBEXT):
-	$(MAKE) $(MAKEARGS) -C $(CADICAL)/build libcadical.a CXX="$(CXX)" CXXFLAGS="$(CP_CXXFLAGS) -DNFLEXIBLE -DNDEBUG"
+	$(MAKE) $(MAKEARGS) -C $(CADICAL)/build libcadical.a CXX="$(CXX)" \
+		CXXFLAGS="$(filter-out -Wswitch-enum, $(CP_CXXFLAGS)) -DNFLEXIBLE -DNDEBUG -DNCLOSEFROM"
 
 -include smt2/smt2_solver$(DEPEXT)
 

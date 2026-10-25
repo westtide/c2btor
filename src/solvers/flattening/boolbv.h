@@ -33,11 +33,13 @@ class byte_update_exprt;
 class concatenation_exprt;
 class extractbit_exprt;
 class extractbits_exprt;
+class floatbv_fma_exprt;
 class floatbv_round_to_integral_exprt;
 class floatbv_typecast_exprt;
 class ieee_float_op_exprt;
 class overflow_result_exprt;
 class popcount_exprt;
+class power_exprt;
 class replication_exprt;
 class unary_overflow_exprt;
 class union_typet;
@@ -177,6 +179,7 @@ protected:
   virtual bvt convert_mod(const mod_exprt &expr);
   virtual bvt convert_floatbv_op(const ieee_float_op_exprt &);
   virtual bvt convert_floatbv_mod_rem(const binary_exprt &);
+  virtual bvt convert_floatbv_fma(const floatbv_fma_exprt &);
   virtual bvt convert_floatbv_typecast(const floatbv_typecast_exprt &expr);
   virtual bvt
   convert_floatbv_round_to_integral(const floatbv_round_to_integral_exprt &);
@@ -185,7 +188,6 @@ protected:
   virtual bvt convert_update(const update_exprt &);
   virtual bvt convert_update_bit(const update_bit_exprt &);
   virtual bvt convert_update_bits(const update_bits_exprt &);
-  virtual bvt convert_case(const case_exprt &);
   virtual bvt convert_cond(const cond_exprt &);
   virtual bvt convert_shift(const binary_exprt &expr);
   virtual bvt convert_bitwise(const exprt &expr);
@@ -198,7 +200,7 @@ protected:
   virtual bvt convert_symbol(const exprt &expr);
   virtual bvt convert_bv_reduction(const unary_exprt &expr);
   virtual bvt convert_not(const not_exprt &expr);
-  virtual bvt convert_power(const binary_exprt &expr);
+  virtual bvt convert_power(const power_exprt &expr);
   virtual bvt convert_function_application(
     const function_application_exprt &expr);
   virtual bvt convert_bitreverse(const bitreverse_exprt &expr);
@@ -256,6 +258,12 @@ protected:
 
   exprt bv_get(const bvt &bv, const typet &type) const;
   exprt bv_get_cache(const exprt &expr) const;
+
+  /// Return the model value for \p expr. Unlike get(), this checks the
+  /// bitvector cache first so that expressions that were converted to SAT
+  /// variables are read from the SAT model rather than symbolically
+  /// evaluated. Intended for use by the refinement loop.
+  exprt get_value(const exprt &expr) const;
 
   // unbounded arrays
   bool is_unbounded_array(const typet &type) const override;

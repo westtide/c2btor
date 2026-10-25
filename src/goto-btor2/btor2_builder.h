@@ -1,8 +1,11 @@
+// SPDX-License-Identifier: BSD-4-Clause
+// SPDX-FileCopyrightText: 2026 C2BTOR contributors
+
 /*******************************************************************\
 
 Module: BTOR2 构建器 - 生成 BTOR2 格式的核心基础设施
 
-Author: Based on CBMC project
+Authors: C2BTOR contributors; CBMC attribution is retained in LICENSES/
 
 \*******************************************************************/
 
@@ -173,6 +176,41 @@ public:
     btor2_nid_t sort_nid,
     btor2_nid_t state_nid,
     btor2_nid_t value_nid);
+
+  /// Initializer of an internal heap state, eligible for exact simplification.
+  btor2_nid_t memory_init(
+    btor2_nid_t sort_nid,
+    btor2_nid_t state_nid,
+    btor2_nid_t value_nid);
+
+  /// Call only after all observations and constraints have been emitted.
+  /// Retains state IDs and order; returns the number of simplified init lines.
+  std::size_t simplify_memory_initializers();
+
+  struct dependency_pruning_reportt
+  {
+    std::size_t nodes_before = 0;
+    std::size_t nodes_after = 0;
+    std::size_t states_before = 0;
+    std::size_t states_after = 0;
+    std::size_t inputs_before = 0;
+    std::size_t inputs_after = 0;
+    std::set<btor2_nid_t> retained_nodes;
+  };
+
+  /// Retain bad/constraint/fair/justice/output declarations, extra roots,
+  /// and their transitive dependencies, including reached states' init/next.
+  /// Call after all transitions and observations have been emitted.
+  /// IDs and line order are preserved; numeric creation ranges may have gaps.
+  /// Invalid or unknown syntax throws before any lines are changed.
+  dependency_pruning_reportt
+  prune_dependencies(const std::vector<btor2_nid_t> &extra_roots = {});
+
+  /// Whether a numeric declaration is still present, including after pruning.
+  bool contains_node(btor2_nid_t nid) const
+  {
+    return nid != 0 && nid < next_nid && removed_nodes.count(nid) == 0;
+  }
 
   /// 设置状态变量的下一个值
   /// 定义状态转换函数：state' = value
@@ -351,6 +389,11 @@ public:
   /// 定义输出
   btor2_nid_t output(btor2_nid_t value, const std::string &comment = "");
 
+  /// Named identity signal plus output, including BtorSim versions that do
+  /// not evaluate output lines themselves when producing VCD.
+  btor2_nid_t observed_output(
+    btor2_nid_t sort, btor2_nid_t value, const std::string &name);
+
   //=========================================================================
   // 辅助方法
   //=========================================================================
@@ -361,7 +404,7 @@ public:
   /// 将生成的 BTOR2 内容写入输出流
   void write(std::ostream &out) const;
 
-  /// 获取当前已生成的节点数量
+  /// 获取已分配的最大节点 ID（裁剪后可能有缺口，不是保留节点的数量）
   btor2_nid_t get_node_count() const
   {
     return next_nid - 1;
@@ -379,7 +422,12 @@ public:
   }
 
 private:
+  // Exercise signed references and future declaration forms in unit tests.
+  friend struct btor2_dependency_pruning_testt;
+
   bool emitted_array_sort = false;
+  std::set<btor2_nid_t> memory_initializers;
+  std::set<btor2_nid_t> removed_nodes;
   // One namespace for all emitted optional symbols. Empty symbols stay absent.
   std::set<std::string> used_symbols;
   std::map<std::string, std::size_t> next_symbol_suffix;

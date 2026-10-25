@@ -77,8 +77,9 @@ void c_typecheck_baset::typecheck_symbol(symbolt &symbol)
       // versions of Visual Studio insist to use this in their C library, and
       // GCC just warns as well.
       warning().source_location = symbol.value.find_source_location();
-      warning() << "'extern' symbol '" << new_name
-                << "' should not have an initializer" << eom;
+      warning() << quote_begin << "extern" << quote_end << " symbol "
+                << quote_begin << new_name << quote_end
+                << " should not have an initializer" << eom;
     }
   }
   else if(!is_function && symbol.value.id()==ID_code)
@@ -751,7 +752,7 @@ void c_typecheck_baset::check_history_expr_return_value(
     if(!can_cast_expr<symbol_exprt>(expr))
       return false;
 
-    return to_symbol_expr(expr).get_identifier() == id;
+    return to_symbol_expr(expr).identifier() == id;
   };
 
   if(!has_subexpr(expr, pred))
@@ -772,7 +773,7 @@ void c_typecheck_baset::check_was_freed(
     if(!can_cast_expr<symbol_exprt>(expr))
       return false;
 
-    return to_symbol_expr(expr).get_identifier() == id;
+    return to_symbol_expr(expr).identifier() == id;
   };
 
   if(has_subexpr(expr, pred))
@@ -975,7 +976,7 @@ void c_typecheck_baset::typecheck_declaration(
         }
 
         for(const auto &parameter_sym : temporary_parameter_symbols)
-          parameter_map.erase(parameter_sym.get_identifier());
+          parameter_map.erase(parameter_sym.identifier());
 
         // create a contract symbol
         symbolt contract;

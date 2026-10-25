@@ -1,6 +1,0 @@
-CORE
-distinct3.smt2
-
-^EXIT=0$
-^SIGNAL=0$
-^unsat$

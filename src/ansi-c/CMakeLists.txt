@@ -11,11 +11,16 @@ add_custom_command(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/cprover_library.inc"
 
 add_executable(file_converter file_converter.cpp)
 
+# Keep build-time generators out of the product's bin directory.
+set_target_properties(converter file_converter PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
 function(make_inc name)
     get_filename_component(inc_path "${CMAKE_CURRENT_BINARY_DIR}/${name}.inc" DIRECTORY)
     add_custom_command(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/${name}.inc"
         COMMAND ${CMAKE_COMMAND} -E make_directory ${inc_path}
-        COMMAND file_converter "${CMAKE_CURRENT_SOURCE_DIR}/${name}.h" > "${CMAKE_CURRENT_BINARY_DIR}/${name}.inc"
+        COMMAND file_converter --line "${CMAKE_CURRENT_SOURCE_DIR}/${name}.h" > "${CMAKE_CURRENT_BINARY_DIR}/${name}.inc"
         DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/${name}.h" file_converter
     )
 endfunction(make_inc)
@@ -127,6 +132,7 @@ file(GLOB_RECURSE sources "*.cpp" "*.h")
 list(REMOVE_ITEM sources
     "${CMAKE_CURRENT_SOURCE_DIR}/library/converter.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/file_converter.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/file_converter.h"
 )
 
 add_library(ansi-c

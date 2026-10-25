@@ -1,0 +1,6 @@
+{
+  "scope": "Fixed-input export/BtorSim/translate/lint smoke; no model checker or CPAchecker",
+  "cases": [
+    {"name": "witness-copies", "source": "witness_copies.c", "inputs": [5, 9], "target": "reach_error", "witness_roundtrip": true, "export_spec": "unreach-call.prp", "expected_map_version": "2"}
+  ]
+}

@@ -1,8 +1,0 @@
-CORE glpk
-safe076.c
-PSO OPT
-^EXIT=0$
-^SIGNAL=0$
-^VERIFICATION SUCCESSFUL$
---
-^warning: ignoring

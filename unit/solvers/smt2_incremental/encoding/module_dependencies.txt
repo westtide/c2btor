@@ -1,3 +1,0 @@
-solvers/smt2_incremental/encoding
-testing-utils
-util

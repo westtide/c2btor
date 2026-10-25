@@ -1,0 +1,29 @@
+{
+  "scope": "Array-block export/translate/offline lint from a supplied simulation prefix; no solver or CPAchecker",
+  "cases": [
+    {
+      "name": "array-latest-store-witness",
+      "source": "phase4_witness_array.c",
+      "inputs": [
+        5,
+        9
+      ],
+      "required_nondet_calls": 2,
+      "scalar_block_checks": true,
+      "array_storage_checks": [
+        {
+          "symbol_regex": "::a$",
+          "logical_when_enabled": true,
+          "rank": 1,
+          "element_width": 32,
+          "latched_dimensions": 0
+        }
+      ],
+      "target": "reach_error",
+      "witness_roundtrip": true,
+      "export_spec": "unreach-call.prp",
+      "expected_map_version": "2",
+      "array_block_checks": true
+    }
+  ]
+}

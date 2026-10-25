@@ -26,3 +26,11 @@ target_link_libraries(goto-analyzer-lib
 add_executable(goto-analyzer goto_analyzer_main.cpp)
 target_link_libraries(goto-analyzer goto-analyzer-lib)
 install(TARGETS goto-analyzer DESTINATION ${CMAKE_INSTALL_BINDIR})
+
+# Man page
+if(NOT WIN32)
+  install(
+    DIRECTORY ${CMAKE_SOURCE_DIR}/doc/man/
+    DESTINATION ${CMAKE_INSTALL_MANDIR}/man1
+    FILES_MATCHING PATTERN "goto-analyzer*")
+endif()

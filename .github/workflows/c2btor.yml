@@ -1,0 +1,117 @@
+name: C2BTOR build and regression
+
+on:
+  pull_request:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends g++ cmake ninja-build flex bison patch perl python3-venv
+          python3 -m venv .venv
+          .venv/bin/pip install -r scripts/tests/requirements.txt
+      - name: Configure and build product and focused tests
+        run: |
+          cmake -S . -B build -G Ninja -Denable_cbmc_tests=ON -DPython3_EXECUTABLE="$PWD/.venv/bin/python"
+          cmake --build build -j2
+      - name: Check retained GOTO analysis target
+        run: cmake --build build --target goto-analyzer -j2
+      - name: Run regression tests
+        run: ctest --test-dir build --output-on-failure
+      - name: Install and smoke-test converter package
+        run: |
+          cmake --install build --component c2btor --prefix "$PWD/stage"
+          .venv/bin/python -m scripts.check_binary_package --package stage
+      - name: Archive Ubuntu x86_64 converter
+        run: tar -czf c2btor-ubuntu-x86_64.tar.gz -C stage .
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: c2btor-ubuntu-x86_64
+          path: c2btor-ubuntu-x86_64.tar.gz
+          if-no-files-found: error
+
+  binaries:
+    name: Converter / ${{ matrix.platform }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04-arm
+            platform: ubuntu-arm64
+          - os: macos-14
+            platform: macos-arm64
+          - os: windows-2022
+            platform: windows-x86_64
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Install Ubuntu dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends g++ cmake ninja-build flex bison patch perl
+      - name: Install macOS dependencies
+        if: runner.os == 'macOS'
+        run: |
+          brew install cmake ninja bison flex
+          echo "$(brew --prefix bison)/bin" >> "$GITHUB_PATH"
+          echo "$(brew --prefix flex)/bin" >> "$GITHUB_PATH"
+      - name: Install Windows parser generators
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: choco install winflexbison3 --yes --no-progress
+      - name: Configure Unix converter
+        if: runner.os != 'Windows'
+        shell: bash
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+      - name: Configure Windows converter
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $bison = (Get-Command win_bison.exe).Source
+          $flex = (Get-Command win_flex.exe).Source
+          cmake -S . -B build -G "Visual Studio 17 2022" -A x64 "-DBISON_EXECUTABLE=$bison" "-DFLEX_EXECUTABLE=$flex"
+          if ($LASTEXITCODE -ne 0) { throw "CMake configure failed" }
+      - name: Build Unix converter
+        if: runner.os != 'Windows'
+        shell: bash
+        run: cmake --build build --target c2btor -j2
+      - name: Build Windows converter
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          cmake --build build --config Release --target c2btor -j2
+          if ($LASTEXITCODE -ne 0) { throw "CMake build failed" }
+      - name: Install and check Unix package
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          cmake --install build --component c2btor --prefix "$PWD/stage"
+          python3 -m scripts.check_binary_package --package stage
+          tar -czf "c2btor-${{ matrix.platform }}.tar.gz" -C stage .
+      - name: Install and check Windows package
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          cmake --install build --config Release --component c2btor --prefix "$PWD/stage"
+          if ($LASTEXITCODE -ne 0) { throw "CMake install failed" }
+          python -m scripts.check_binary_package --package stage
+          if ($LASTEXITCODE -ne 0) { throw "Package smoke test failed" }
+          Compress-Archive -Path stage/* -DestinationPath "c2btor-${{ matrix.platform }}.zip"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: c2btor-${{ matrix.platform }}
+          path: c2btor-${{ matrix.platform }}.*
+          if-no-files-found: error

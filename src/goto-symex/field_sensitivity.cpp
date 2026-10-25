@@ -37,12 +37,41 @@ exprt field_sensitivityt::apply_byte_extract(
   const byte_extract_exprt &be,
   bool write) const
 {
-  if(
-    (be.op().type().id() != ID_union && be.op().type().id() != ID_union_tag) ||
-    !is_ssa_expr(be.op()) || !be.offset().is_constant())
+  if(be.op().type().id() != ID_union && be.op().type().id() != ID_union_tag)
+    return be;
+
+  // For non-constant offsets, decompose through the widest union member so
+  // that field sensitivity can process the resulting struct/array expression.
+  // This avoids materialising the full union as a flat bitvector in the SMT
+  // encoding. The operand need not be an SSA expression (e.g., it may be an
+  // index into an array of unions when array field sensitivity is disabled).
+  if(!be.offset().is_constant())
   {
+    const union_typet &union_type =
+      be.op().type().id() == ID_union_tag
+        ? ns.follow_tag(to_union_tag_type(be.op().type()))
+        : to_union_type(be.op().type());
+
+    const auto union_size = pointer_offset_bits(union_type, ns);
+    const auto widest = union_type.find_widest_union_component(ns);
+    if(
+      widest.has_value() && union_size.has_value() &&
+      widest->second == *union_size)
+    {
+      byte_extract_exprt new_be{
+        be.id(),
+        member_exprt{be.op(), widest->first.get_name(), widest->first.type()},
+        be.offset(),
+        be.get_bits_per_byte(),
+        be.type()};
+      return apply(ns, state, std::move(new_be), write);
+    }
+
     return be;
   }
+
+  if(!is_ssa_expr(be.op()))
+    return be;
 
   const union_typet &type = be.op().type().id() == ID_union_tag
                               ? ns.follow_tag(to_union_tag_type(be.op().type()))
@@ -220,7 +249,7 @@ exprt field_sensitivityt::apply(
         // In case the array type was incomplete, attempt to retrieve it from
         // the symbol table.
         const symbolt *array_from_symbol_table = ns.get_symbol_table().lookup(
-          to_symbol_expr(index.array()).get_identifier());
+          to_symbol_expr(index.array()).identifier());
         if(array_from_symbol_table != nullptr)
           l2_size = to_array_type(array_from_symbol_table->type).size();
       }
@@ -373,7 +402,7 @@ void field_sensitivityt::field_assignments(
     // assignments, thus we cannot skip putting it in there above.
     if(is_divisible(lhs, true))
     {
-      state.propagation.erase_if_exists(lhs.get_identifier());
+      state.propagation.erase_if_exists(lhs.identifier());
       state.value_set.erase_symbol(lhs, ns);
     }
   }
@@ -419,7 +448,7 @@ void field_sensitivityt::field_assignments_rec(
     // assignments, thus we cannot skip putting it in there above.
     if(is_divisible(l1_lhs, true))
     {
-      state.propagation.erase_if_exists(l1_lhs.get_identifier());
+      state.propagation.erase_if_exists(l1_lhs.identifier());
       state.value_set.erase_symbol(l1_lhs, ns);
     }
   }

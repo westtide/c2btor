@@ -45,6 +45,10 @@ static int isatty(int) { return 0; }
 #define ECHO
 
 #include "ansi_c_parser.h"
+#undef YY_USER_ACTION
+#define YY_USER_ACTION \
+  PARSER.advance_column(yyleng); \
+  PARSER.witness_scan_token(yytext, yyleng);
 #include "ansi_c_y.tab.h"
 #ifdef ANSI_C_DEBUG
 extern int yyansi_cdebug;
@@ -68,7 +72,9 @@ int yyansi_cerror(const std::string &error)
 }
 
 #define loc() \
-  { newstack(yyansi_clval); PARSER.set_source_location(parser_stack(yyansi_clval)); }
+  { newstack(yyansi_clval); PARSER.set_source_location(parser_stack(yyansi_clval)); \
+    if(yyleng == 1 && yytext[0] == ')') \
+      PARSER.witness_closing_token(parser_stack(yyansi_clval)); }
 
 int make_identifier()
 {
@@ -280,7 +286,7 @@ enable_or_disable ("enable"|"disable")
 %%
 
 <INITIAL>.|\n   { BEGIN(GRAMMAR);
-                  yyless(0); /* start again with this character */
+                  PARSER.witness_rewind_token(yytext, 0); yyless(0); /* start again with this character */
                 }
 
 <GRAMMAR>"/*"   { BEGIN(COMMENT1); } /* begin C comment state */
@@ -343,7 +349,7 @@ enable_or_disable ("enable"|"disable")
                   parser_stack(yyansi_clval)=convert_string_literal(PARSER.string_literal);
                   parser_stack(yyansi_clval).add_source_location().swap(l);
                   yy_pop_state(); // back to normal
-                  yyless(0); // put back
+                  PARSER.witness_rewind_token(yytext, 0); yyless(0); // put back
                   return TOK_STRING;
                 }
 
@@ -659,6 +665,14 @@ enable_or_disable ("enable"|"disable")
                     TOK_GCC_BUILTIN_TYPES_COMPATIBLE_P);
                 }
 
+"__builtin_has_attribute" {
+                  return conditional_keyword(
+                    PARSER.mode==configt::ansi_ct::flavourt::GCC ||
+                    PARSER.mode==configt::ansi_ct::flavourt::CLANG ||
+                    PARSER.mode==configt::ansi_ct::flavourt::ARM,
+                    TOK_GCC_BUILTIN_HAS_ATTRIBUTE);
+                }
+
 "__builtin_convertvector" {
                   return conditional_keyword(
                     PARSER.mode==configt::ansi_ct::flavourt::GCC ||
@@ -845,7 +859,7 @@ enable_or_disable ("enable"|"disable")
                         return cpp_operator(TOK_SCOPE);
                       else
                       {
-                        yyless(1); // puts all but one : back into stream
+                        PARSER.witness_rewind_token(yytext, 1); yyless(1); // puts all but one : back into stream
                         loc();
                         PARSER.tag_following=false;
                         return ':';
@@ -913,7 +927,7 @@ enable_or_disable ("enable"|"disable")
                       }
                       else
                       {
-                        yyless(1); // puts one [ back into stream
+                        PARSER.witness_rewind_token(yytext, 1); yyless(1); // puts one [ back into stream
                         loc();
                         PARSER.tag_following=false;
                         return yytext[0]; // returns one [
@@ -934,7 +948,7 @@ enable_or_disable ("enable"|"disable")
                      BEGIN(MSC_ANNOTATION);
                    else
                    {
-                     yyless(1); // puts all but [ back into stream
+                     PARSER.witness_rewind_token(yytext, 1); yyless(1); // puts all but [ back into stream
                      loc();
                      PARSER.tag_following=false;
                      return yytext[0]; // returns the [
@@ -1022,6 +1036,17 @@ enable_or_disable ("enable"|"disable")
 "__aligned__"   { /* ignore */ }
 
 "__extension__" { /* ignore */ }
+
+  /* x86 named-address-space (segment) qualifiers used by the kernel's
+     per-CPU accessors (arch/x86/include/asm/percpu.h) when the compiler
+     supports named address spaces (CONFIG_CC_HAS_NAMED_ADDRESS_SPACES).
+     They denote %fs/%gs segment-relative addressing, which is irrelevant
+     to functional verification, so we ignore the qualifier (the pointed-to
+     object is unchanged).  When the compiler lacks the feature these are
+     instead macros expanding to __attribute__((address_space(...))), which
+     the GCC_ATTRIBUTE states already discard. */
+"__seg_fs"      { /* ignore: segment address-space qualifier */ }
+"__seg_gs"      { /* ignore: segment address-space qualifier */ }
 
 "__restrict"    { loc(); return TOK_RESTRICT; }
 "__restrict__"  { loc(); return TOK_RESTRICT; }
@@ -1386,7 +1411,7 @@ enable_or_disable ("enable"|"disable")
    */
 
 "_Atomic"{ws}"(" { // put back all but _Atomic
-                  yyless(7);
+                  PARSER.witness_rewind_token(yytext, 7); yyless(7);
 
                   return conditional_keyword(
                     !PARSER.cpp98 &&
@@ -1598,7 +1623,7 @@ enable_or_disable ("enable"|"disable")
                   loc();
                   parser_stack(yyansi_clval)=string_constantt(PARSER.string_literal);
                   BEGIN(GRAMMAR);
-                  yyless(0); // put back
+                  PARSER.witness_rewind_token(yytext, 0); yyless(0); // put back
                   return TOK_ASM_STRING;
                 }
 }
@@ -1624,16 +1649,16 @@ enable_or_disable ("enable"|"disable")
                 }
 {ws}            { /* ignore */ }
 {newline}       { /* ignore */ }
-"{"             { yyless(0); BEGIN(GRAMMAR); loc(); PARSER.asm_block_following=true; return TOK_GCC_ASM_PAREN; }
-"("             { yyless(0); BEGIN(GRAMMAR); loc(); return TOK_GCC_ASM_PAREN; }
-"volatile"      { yyless(0); BEGIN(GRAMMAR); loc(); return TOK_GCC_ASM_PAREN; }
-"__volatile"    { yyless(0); BEGIN(GRAMMAR); loc(); return TOK_GCC_ASM_PAREN; }
-"__volatile__"  { yyless(0); BEGIN(GRAMMAR); loc(); return TOK_GCC_ASM_PAREN; }
-"goto"          { yyless(0); BEGIN(GRAMMAR); loc(); return TOK_GCC_ASM_PAREN; }
-"inline"        { yyless(0); BEGIN(GRAMMAR); loc(); return TOK_GCC_ASM_PAREN; }
-"__inline"      { yyless(0); BEGIN(GRAMMAR); loc(); return TOK_GCC_ASM_PAREN; }
-"__inline__"    { yyless(0); BEGIN(GRAMMAR); loc(); return TOK_GCC_ASM_PAREN; }
-.               { yyless(0); BEGIN(GRAMMAR); loc(); PARSER.asm_block_following=true; return TOK_GCC_ASM; }
+"{"             { PARSER.witness_rewind_token(yytext, 0); yyless(0); BEGIN(GRAMMAR); loc(); PARSER.asm_block_following=true; return TOK_GCC_ASM_PAREN; }
+"("             { PARSER.witness_rewind_token(yytext, 0); yyless(0); BEGIN(GRAMMAR); loc(); return TOK_GCC_ASM_PAREN; }
+"volatile"      { PARSER.witness_rewind_token(yytext, 0); yyless(0); BEGIN(GRAMMAR); loc(); return TOK_GCC_ASM_PAREN; }
+"__volatile"    { PARSER.witness_rewind_token(yytext, 0); yyless(0); BEGIN(GRAMMAR); loc(); return TOK_GCC_ASM_PAREN; }
+"__volatile__"  { PARSER.witness_rewind_token(yytext, 0); yyless(0); BEGIN(GRAMMAR); loc(); return TOK_GCC_ASM_PAREN; }
+"goto"          { PARSER.witness_rewind_token(yytext, 0); yyless(0); BEGIN(GRAMMAR); loc(); return TOK_GCC_ASM_PAREN; }
+"inline"        { PARSER.witness_rewind_token(yytext, 0); yyless(0); BEGIN(GRAMMAR); loc(); return TOK_GCC_ASM_PAREN; }
+"__inline"      { PARSER.witness_rewind_token(yytext, 0); yyless(0); BEGIN(GRAMMAR); loc(); return TOK_GCC_ASM_PAREN; }
+"__inline__"    { PARSER.witness_rewind_token(yytext, 0); yyless(0); BEGIN(GRAMMAR); loc(); return TOK_GCC_ASM_PAREN; }
+.               { PARSER.witness_rewind_token(yytext, 0); yyless(0); BEGIN(GRAMMAR); loc(); PARSER.asm_block_following=true; return TOK_GCC_ASM; }
 }
 
 <GCC_ATTRIBUTE1>{

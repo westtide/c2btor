@@ -444,9 +444,8 @@ void goto_check_ct::collect_allocations(const goto_functionst &goto_functions)
 
       const auto &function = instruction.call_function();
       if(
-        function.id() != ID_symbol ||
-        to_symbol_expr(function).get_identifier() != CPROVER_PREFIX
-          "allocated_memory")
+        function.id() != ID_symbol || to_symbol_expr(function).identifier() !=
+                                        CPROVER_PREFIX "allocated_memory")
         continue;
 
       const code_function_callt::argumentst &args =
@@ -474,7 +473,7 @@ void goto_check_ct::invalidate(const exprt &lhs)
   else if(lhs.id() == ID_symbol)
   {
     // clear all assertions about 'symbol'
-    const irep_idt &lhs_id = to_symbol_expr(lhs).get_identifier();
+    const irep_idt &lhs_id = to_symbol_expr(lhs).identifier();
 
     for(auto it = assertions.begin(); it != assertions.end();)
     {
@@ -1509,7 +1508,7 @@ void goto_check_ct::pointer_primitive_check(
   {
     const auto &symbol_expr = to_symbol_expr(pointer);
 
-    if(symbol_expr.get_identifier().starts_with(CPROVER_PREFIX))
+    if(symbol_expr.identifier().starts_with(CPROVER_PREFIX))
       return;
   }
 
@@ -1958,7 +1957,17 @@ void goto_check_ct::check_rec_arithmetic_op(
 {
   if(expr.type().id() == ID_signedbv || expr.type().id() == ID_unsignedbv)
   {
-    integer_overflow_check(expr, guard);
+    // A pointer difference p - q has result type signedbv (ptrdiff_t),
+    // but its operands are pointers.  integer_overflow_check builds
+    // overflow-(p, q) which tests the operand type (unsigned / pointer),
+    // not the result type, and therefore flags every case where q > p.
+    // Skip the check: the result is already range-checked by the
+    // pointer-arithmetic bounds checks.
+    const bool is_pointer_difference =
+      expr.id() == ID_minus && expr.operands().size() == 2 &&
+      expr.operands()[0].type().id() == ID_pointer;
+    if(!is_pointer_difference)
+      integer_overflow_check(expr, guard);
 
     if(
       expr.operands().size() == 2 && expr.id() == ID_minus &&
@@ -2333,8 +2342,7 @@ void goto_check_ct::check_shadow_memory_api_calls(
   if(i.call_function().id() != ID_symbol)
     return;
 
-  const irep_idt &identifier =
-    to_symbol_expr(i.call_function()).get_identifier();
+  const irep_idt &identifier = to_symbol_expr(i.call_function()).identifier();
 
   if(
     identifier == CPROVER_PREFIX "get_field" || identifier == CPROVER_PREFIX

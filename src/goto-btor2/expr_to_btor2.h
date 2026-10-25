@@ -1,8 +1,11 @@
+// SPDX-License-Identifier: BSD-4-Clause
+// SPDX-FileCopyrightText: 2026 C2BTOR contributors
+
 /*******************************************************************\
 
 Module: 表达式到 BTOR2 的转换
 
-Author: Based on CBMC project
+Authors: C2BTOR contributors; CBMC attribution is retained in LICENSES/
 
 \*******************************************************************/
 
@@ -99,7 +102,16 @@ public:
   /// @param expr 要转换的表达式
   /// @return 转换结果的节点 ID，失败返回 0
   btor2_nid_t convert(const exprt &expr);
+  void enable_event_input_tracking() { track_event_inputs = true; }
+  const std::vector<btor2_nid_t> &event_inputs() const { return event_input_nodes; }
   void set_memory(memory_accesst *value) { memory = value; }
+  // Internal scalar pointer values may carry a hidden object tag. This never
+  // changes the source pointer type, its byte layout, or sizeof(pointer).
+  void set_pointer_value_width(std::size_t width)
+  {
+    pointer_value_width = width;
+    clear_caches();
+  }
 
   //=========================================================================
   // 类型支持检查
@@ -265,6 +277,7 @@ public:
 
 private:
   memory_accesst *memory = nullptr;
+  std::size_t pointer_value_width = 0;
   btor2_nid_t unsupported_pointer_input(btor2_nid_t sort, const std::string &name);
   btor2_buildert &builder;  ///< BTOR2 构建器引用
   const namespacet &ns;     ///< 命名空间
@@ -311,6 +324,8 @@ private:
 
   /// Counter to give stable names to generated nondet inputs.
   std::size_t nondet_counter = 0;
+  bool track_event_inputs = false;
+  std::vector<btor2_nid_t> event_input_nodes;
   /// Counter to give stable names to generated array-literal base inputs.
   std::size_t array_literal_counter = 0;
   /// Counter to give stable names to generated allocate inputs.
@@ -336,6 +351,7 @@ private:
   bool require_float_rounding_mode(const exprt &mode, unsigned expected);
   btor2_nid_t convert_float_rounding_mode(const exprt &mode);
   btor2_nid_t convert_float_math(const exprt &expr);
+  btor2_nid_t convert_float_round_to_integral(const exprt &expr);
 
   /// Convert floating-point casts through self-contained IEEE bit circuits.
   btor2_nid_t convert_floatbv_typecast(const floatbv_typecast_exprt &expr);

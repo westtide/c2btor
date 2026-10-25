@@ -1,0 +1,112 @@
+{
+  "date": "2026-10-25",
+  "environment": {
+    "os": "Ubuntu 24.04 under WSL",
+    "compiler": "GNU C++ 13.3.0",
+    "cmake": "3.28",
+    "python": "3.12"
+  },
+  "source": {
+    "development_base": "58db665462f3f7aec6e1363d0e7a16b812380f5f",
+    "upstream": "8fcda333650440a60d3a054552a7ad318255b95d",
+    "common_ancestor": "844c8e63f5a53d2b3299197e2e13699a2d35b807",
+    "original_cbmc_license_changed": false
+  },
+  "tests": {
+    "build_and_install": {
+      "default_linked_executables": ["c2btor", "converter", "file_converter"],
+      "product_component_install": "passed",
+      "installed_converter_outside_source_tree": "passed",
+      "installed_btor2_catbtor_check": "passed",
+      "license_files_installed": true,
+      "runtime_packaging_shell_syntax": "passed",
+      "fresh_c_and_cpp_library_model_checks": "passed",
+      "builtin_bzero_library_regression": "passed"
+    },
+    "cpp": {
+      "test_cases": 187,
+      "assertions": 6721,
+      "passed": true
+    },
+    "python": {
+      "run": 58,
+      "passed": 53,
+      "skipped": 5,
+      "failed": 0
+    },
+    "finite_regression_runs": {
+      "bv_state_ablation": 44,
+      "cross_version_all_modes": 138,
+      "array_mixed_blocks": 120,
+      "all_passed": true
+    }
+  },
+  "bv_state_ablation": {
+    "configurations": 22,
+    "architectures": [
+      "ILP32",
+      "LP64"
+    ],
+    "before_after_same_upstream_converter": true,
+    "before": "state pruning off",
+    "after": "--goto-btor2-optimize-state",
+    "measurements": {
+      "before": {
+        "metrics": {
+          "state_count": 270,
+          "bitvec_state_bits": 6336,
+          "array_state_count": 0,
+          "instruction_positions": 444,
+          "pc_positions": 280,
+          "active_pc_entries": 280,
+          "pc_equality_guards": 282,
+          "numeric_nodes": 8908,
+          "read_ops": 0,
+          "write_ops": 0,
+          "model_bytes": 174192
+        },
+        "conversion_wall_seconds_sum": 2.295337,
+        "conversion_wall_seconds_median": 0.104018
+      },
+      "after": {
+        "metrics": {
+          "state_count": 152,
+          "bitvec_state_bits": 4684,
+          "array_state_count": 0,
+          "instruction_positions": 444,
+          "pc_positions": 280,
+          "active_pc_entries": 280,
+          "pc_equality_guards": 282,
+          "numeric_nodes": 7585,
+          "read_ops": 0,
+          "write_ops": 0,
+          "model_bytes": 152997
+        },
+        "conversion_wall_seconds_sum": 2.291331,
+        "conversion_wall_seconds_median": 0.1036685
+      }
+    },
+    "polling_seconds": 0.1
+  },
+  "review_update": {
+    "comment": "https://github.com/westtide/cbmc/pull/7#issuecomment-6392383998",
+    "retained_merged_tree_hashes": {
+      "src/solvers/floatbv": "44826333c416fc53653913e5357074a6b2e9d554",
+      "src/analyses": "01c9091911eeb94b5ebe82c7708dea8f50a409b8",
+      "src/goto-analyzer": "2f723302e72128e41395801063d46e720140c10e"
+    },
+    "analyzer_constants_simplify_to_btor2": "passed",
+    "installed_package_three_modes_and_licenses": "passed",
+    "runtime_packager_preflight_tests": "passed",
+    "workflow_yaml": "passed",
+    "artifact_platforms": ["ubuntu-x86_64", "ubuntu-arm64", "macos-arm64", "windows-x86_64"]
+  },
+  "limitations": [
+    "Fixed-input finite prefixes do not establish unbounded equivalence or source safety.",
+    "Conversion timing is dominated by 0.1-second harness polling for these small fixtures; no speedup claim.",
+    "Five tests requiring external replay/tool integration were skipped.",
+    "Full Carat build, external witness validation and solver-runtime benchmarking were not run.",
+    "New frontend syntax may still be explicitly Unsupported by the BTOR2 encoder.",
+    "GitHub hosted CI status is separate from the local checks."
+  ]
+}

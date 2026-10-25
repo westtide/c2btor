@@ -1,0 +1,19 @@
+{
+  "scope": "Scalar-block export/translate/offline-lint over a supplied fixed-input prefix; no model checker or CPAchecker",
+  "cases": [
+    {
+      "name": "scalar-conditional-witness",
+      "source": "phase3_witness_scalar.c",
+      "inputs": [
+        5,
+        9
+      ],
+      "target": "reach_error",
+      "required_nondet_calls": 2,
+      "witness_roundtrip": true,
+      "export_spec": "unreach-call.prp",
+      "expected_map_version": "2",
+      "scalar_block_checks": true
+    }
+  ]
+}

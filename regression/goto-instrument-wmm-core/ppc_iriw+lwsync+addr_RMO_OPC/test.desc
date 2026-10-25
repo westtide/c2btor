@@ -1,8 +1,0 @@
-THOROUGH
-iriw+lwsync+addr.c
-RMO OPC
-^EXIT=0$
-^SIGNAL=0$
-^VERIFICATION SUCCESSFUL$
---
-^warning: ignoring

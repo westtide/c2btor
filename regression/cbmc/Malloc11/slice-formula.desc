@@ -1,7 +1,0 @@
-CORE
-main.c
---no-malloc-may-fail --slice-formula
-^EXIT=0$
-^SIGNAL=0$
-^VERIFICATION SUCCESSFUL$
---

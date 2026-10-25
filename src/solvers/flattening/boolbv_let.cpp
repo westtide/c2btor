@@ -6,11 +6,12 @@ Author: Daniel Kroening, kroening@kroening.com
 
 \*******************************************************************/
 
-#include "boolbv.h"
-
+#include <util/byte_operators.h>
 #include <util/range.h>
 #include <util/replace_symbol.h>
 #include <util/std_expr.h>
+
+#include "boolbv.h"
 
 bvt boolbvt::convert_let(const let_exprt &expr)
 {
@@ -51,7 +52,7 @@ bvt boolbvt::convert_let(const let_exprt &expr)
   // Now assign
   for(const auto &binding : make_range(fresh_variables).zip(converted_values))
   {
-    const auto &identifier = binding.first.get_identifier();
+    const auto &identifier = binding.first.identifier();
 
     // make the symbol visible
     if(binding.first.is_boolean())
@@ -69,6 +70,20 @@ bvt boolbvt::convert_let(const let_exprt &expr)
   for(const auto &pair : make_range(variables).zip(fresh_variables))
     replace_symbol.insert(pair.first, pair.second);
 
+  // Connect fresh let-bound symbols to their values in the array theory.
+  for(const auto &pair : make_range(fresh_variables).zip(values))
+  {
+    if(
+      pair.first.type().id() == ID_array &&
+      is_unbounded_array(to_array_type(pair.first.type())))
+    {
+      const exprt lowered_value = has_byte_operator(pair.second)
+                                    ? lower_byte_operators(pair.second, ns)
+                                    : pair.second;
+      record_array_let_binding(pair.first, lowered_value);
+    }
+  }
+
   // rename the bound symbols in 'where'
   exprt where_renamed = expr.where();
   replace_symbol(where_renamed);
@@ -81,9 +96,9 @@ bvt boolbvt::convert_let(const let_exprt &expr)
   {
     const auto &type = entry.type();
     if(type.id() == ID_bool)
-      symbols.erase(entry.get_identifier());
+      symbols.erase(entry.identifier());
     else
-      map.erase_literals(entry.get_identifier(), type);
+      map.erase_literals(entry.identifier(), type);
   }
 
   return result_bv;

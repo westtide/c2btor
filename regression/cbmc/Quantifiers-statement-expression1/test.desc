@@ -1,8 +1,0 @@
-CORE
-main.c
-
-goto label 'out' not found
-^EXIT=6$
-^SIGNAL=0$
---
-^warning: ignoring

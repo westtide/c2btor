@@ -1,4 +1,3 @@
-* text=auto
 *.cpp text diff=cpp
 *.c text diff=cpp
 *.h text diff=cpp
@@ -11,11 +10,6 @@
 *.desc text
 *.md text
 Makefile text
-
-# Keep Linux entry points and release documents usable from Windows checkouts.
-*.sh text eol=lf
-*.py text eol=lf
-*.md text eol=lf
-*.cmake text eol=lf
-CMakeLists.txt text eol=lf
-.gitignore text eol=lf
+# Keep pinned upstream schemas byte-identical, including upstream trailing spaces.
+scripts/tests/schema/** whitespace=-blank-at-eol
+test/tools/patches/cpachecker-condition-location.patch whitespace=-blank-at-eol
