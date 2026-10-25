@@ -15,6 +15,7 @@ Author: Daniel Kroening, kroening@kroening.com
 #include <util/config.h>
 #include <util/floatbv_expr.h>
 #include <util/magic.h>
+#include <util/mathematical_expr.h>
 #include <util/mp_arith.h>
 #include <util/simplify_expr.h>
 #include <util/std_expr.h>
@@ -122,8 +123,6 @@ bvt boolbvt::convert_bitvector(const exprt &expr)
     return convert_update(to_update_expr(expr));
   else if(expr.id() == ID_update_bit)
     return convert_update_bit(to_update_bit_expr(expr));
-  else if(expr.id()==ID_case)
-    return convert_case(to_case_expr(expr));
   else if(expr.id()==ID_cond)
     return convert_cond(to_cond_expr(expr));
   else if(expr.id()==ID_if)
@@ -152,6 +151,10 @@ bvt boolbvt::convert_bitvector(const exprt &expr)
     expr.id() == ID_floatbv_mult || expr.id() == ID_floatbv_div)
   {
     return convert_floatbv_op(to_ieee_float_op_expr(expr));
+  }
+  else if(expr.id() == ID_floatbv_fma)
+  {
+    return convert_floatbv_fma(to_floatbv_fma_expr(expr));
   }
   else if(expr.id() == ID_floatbv_mod)
     return convert_floatbv_mod_rem(to_binary_expr(expr));
@@ -233,7 +236,7 @@ bvt boolbvt::convert_bitvector(const exprt &expr)
   else if(expr.id()==ID_not)
     return convert_not(to_not_expr(expr));
   else if(expr.id()==ID_power)
-     return convert_power(to_binary_expr(expr));
+    return convert_power(to_power_expr(expr));
   else if(expr.id() == ID_popcount)
      return convert_popcount(to_popcount_expr(expr));
   else if(expr.id() == ID_count_leading_zeros)
@@ -388,12 +391,6 @@ literalt boolbvt::convert_rest(const exprt &expr)
     CHECK_RETURN(bv.size() == 1);
     return bv[0];
   }
-  else if(expr.id()==ID_case)
-  {
-    bvt bv = convert_case(to_case_expr(expr));
-    CHECK_RETURN(bv.size() == 1);
-    return bv[0];
-  }
   else if(expr.id()==ID_cond)
   {
     bvt bv = convert_cond(to_cond_expr(expr));
@@ -456,7 +453,7 @@ literalt boolbvt::convert_rest(const exprt &expr)
         !float_utils.is_infinity(bv),
         !float_utils.is_NaN(bv));
     }
-    else if(op.id() == ID_fixedbv)
+    else if(op.type().id() == ID_fixedbv)
       return const_literal(true);
   }
   else if(expr.id()==ID_isinf)
@@ -511,8 +508,7 @@ bool boolbvt::boolbv_set_equality_to_true(const equal_exprt &expr)
 
     const bvt &bv1=convert_bv(expr.rhs());
 
-    const irep_idt &identifier=
-      to_symbol_expr(expr.lhs()).get_identifier();
+    const irep_idt &identifier = to_symbol_expr(expr.lhs()).identifier();
 
     map.set_literals(identifier, type, bv1);
 
@@ -564,7 +560,7 @@ binding_exprt::variablest boolbvt::fresh_binding(const binding_exprt &binding)
 
   for(const auto &binding : binding.variables())
   {
-    const auto &old_identifier = binding.get_identifier();
+    const auto &old_identifier = binding.identifier();
 
     // produce a new identifier
     const irep_idt new_identifier =

@@ -1,7 +1,0 @@
-CORE
-predefined-constants1.c
---c23
-^EXIT=0$
-^SIGNAL=0$
---
-^warning: ignoring

@@ -1,8 +1,11 @@
+// SPDX-License-Identifier: BSD-4-Clause
+// SPDX-FileCopyrightText: 2026 C2BTOR contributors
+
 /*******************************************************************\
 
 Module: Expression-to-BTOR2 conversion -- bitvector operations
 
-Author: Based on CBMC project
+Authors: C2BTOR contributors; CBMC attribution is retained in LICENSES/
 
 \*******************************************************************/
 
@@ -17,6 +20,7 @@ Author: Based on CBMC project
 
 #include "expr_to_btor2.h"
 #include "btor2_type_utils.h"
+#include "memory_access.h"
 
 #include <util/arith_tools.h>
 #include <util/bitvector_expr.h>
@@ -253,6 +257,38 @@ btor2_nid_t expr_to_btor2t::convert_binary(const exprt &expr)
 {
   if(expr.operands().size() < 2)
     return 0;
+  if(expr.id() == ID_implies && expr.operands().size() != 2)
+    return 0;
+
+  // C logical operators evaluate later operands only along the continuing
+  // path. The value is still a Boolean BTOR2 expression, but memory checks
+  // from an unevaluated operand must not halt the transition.
+  if(
+    memory &&
+    (expr.id() == ID_and || expr.id() == ID_or || expr.id() == ID_implies))
+  {
+    const auto sort = builder.get_bool_sort();
+    const auto saved_guard = memory->heap.path_guard;
+    auto result = convert(expr.operands().front());
+    for(std::size_t i = 1; result != 0 && i < expr.operands().size(); ++i)
+    {
+      const auto continuing = expr.id() == ID_or
+                                ? builder.lnot(sort, result)
+                                : result;
+      memory->heap.path_guard = builder.land(sort, saved_guard, continuing);
+      const auto operand = convert(expr.operands()[i]);
+      if(operand == 0)
+        result = 0;
+      else if(expr.id() == ID_and)
+        result = builder.land(sort, result, operand);
+      else if(expr.id() == ID_or)
+        result = builder.lor(sort, result, operand);
+      else
+        result = builder.implies(sort, result, operand);
+    }
+    memory->heap.path_guard = saved_guard;
+    return result;
+  }
 
   // Pointer arithmetic operates on the byte-offset portion of the packed
   // pointer. Scale integer operands by sizeof(*p), as required by C.
@@ -474,9 +510,21 @@ btor2_nid_t expr_to_btor2t::convert_comparison(const binary_relation_exprt &expr
 /// @return 转换结果的节点 ID，失败返回 0
 btor2_nid_t expr_to_btor2t::convert_if(const if_exprt &expr)
 {
-  btor2_nid_t cond_nid = convert(expr.cond());       // 条件
-  btor2_nid_t then_nid = convert(expr.true_case());  // then 分支
-  btor2_nid_t else_nid = convert(expr.false_case()); // else 分支
+  btor2_nid_t cond_nid = convert(expr.cond());
+  if(cond_nid == 0)
+    return 0;
+
+  const auto bool_sort = builder.get_bool_sort();
+  const auto saved_guard = memory ? memory->heap.path_guard : 0;
+  if(memory)
+    memory->heap.path_guard = builder.land(bool_sort, saved_guard, cond_nid);
+  btor2_nid_t then_nid = convert(expr.true_case());
+  if(memory)
+    memory->heap.path_guard = builder.land(
+      bool_sort, saved_guard, builder.lnot(bool_sort, cond_nid));
+  btor2_nid_t else_nid = convert(expr.false_case());
+  if(memory)
+    memory->heap.path_guard = saved_guard;
 
   if(cond_nid == 0 || then_nid == 0 || else_nid == 0)
     return 0;

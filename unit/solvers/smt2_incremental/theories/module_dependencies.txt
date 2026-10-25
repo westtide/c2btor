@@ -1,4 +1,0 @@
-solvers/smt2_incremental/ast
-solvers/smt2_incremental/theories
-testing-utils
-util

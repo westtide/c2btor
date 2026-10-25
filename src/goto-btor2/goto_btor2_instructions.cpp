@@ -1,8 +1,11 @@
+// SPDX-License-Identifier: BSD-4-Clause
+// SPDX-FileCopyrightText: 2026 C2BTOR contributors
+
 /*******************************************************************\
 
 Module: Goto 程序到 BTOR2 的转换 - 指令处理
 
-Author: Based on CBMC project
+Authors: C2BTOR contributors; CBMC attribution is retained in LICENSES/
 
 \*******************************************************************/
 
@@ -19,7 +22,7 @@ Author: Based on CBMC project
 /// - ASSUME: 同时产生两个效果（且关系）：
 ///   (a) 记录假设信息，稍后生成 constraint（全局约束）；
 ///   (b) 限制 PC 转移，仅当条件成立时才推进到下一条指令
-/// - FUNCTION_CALL: 处理 nondet/malloc/abort/__assert_fail 等特殊函数
+/// - FUNCTION_CALL: 处理 nondet/malloc/abort 等已支持调用，其余明确拒绝
 /// - 其他: 仅生成 PC 递增（fall-through）
 
 #include "goto_btor2_converter.h"
@@ -108,15 +111,24 @@ void goto_to_btor2_convertert::process_instructions()
 
   for(const auto &loc : location_order)
   {
+    const auto &block = blocks[location_to_block.at(loc)];
+    if(block.front() != loc)
+      continue;
+    if(block.size() > 1)
+    {
+      process_block(block);
+      continue;
+    }
     auto &info = locations[loc];
     const auto &instr = *info.instruction;
+    const auto input_start = expr_converter.event_inputs().size();
     info.first_node = builder.get_node_count() + 1;
 
     // at_loc 表示 PC == loc（当前是否在此位置）
     btor2_nid_t at_loc = make_pc_equals(loc);
     info.pc_guard = at_loc;
     expr_converter.clear_caches();
-    memory.heap.begin(loc, at_loc);
+    memory.begin(loc, at_loc);
 
     // 根据指令类型分派处理
     switch(instr.type())
@@ -145,8 +157,15 @@ void goto_to_btor2_convertert::process_instructions()
         const auto id = instr.decl_symbol().get_identifier();
         const auto variable = variables.find(id);
         if(variable != variables.end())
-          state_updates[id].push_back({at_loc, builder.input(
-            variable->second.sort_nid, variable->second.name + "_decl")});
+        {
+          const auto value = builder.input(
+            variable->second.sort_nid, variable->second.name + "_decl");
+          if(variable->second.state_nid)
+            state_updates[id].push_back({at_loc, value});
+          info.value_node = value;
+          info.value_sort = variable->second.sort_nid;
+          info.input_nodes.push_back(value);
+        }
       }
       add_pc_fallthrough(loc, at_loc);
       break;
@@ -176,30 +195,9 @@ void goto_to_btor2_convertert::process_instructions()
       }
       if(instr.get_other().get_statement() == "c2btor_copy_check")
       {
-        const auto &code = instr.get_other();
-        auto destination = expr_converter.convert(code.op0());
-        auto source = expr_converter.convert(code.op1());
-        auto size = expr_converter.convert(typecast_exprt::conditional_cast(
-          code.operands()[2], unsignedbv_typet(memory.heap.pointer_bits)));
-        if(!destination || !source || !size)
-          conversion_error("Cannot normalize memory copy arguments");
-        else
-        {
-          auto &heap = memory.heap;
-          auto sort = builder.get_bool_sort();
-          heap.require(heap.accessible(source, size, false));
-          heap.require(heap.accessible(destination, size, true));
-          if(!code.get_bool("allow_overlap"))
-          {
-            // Bounds above ensure these nonnegative sums cannot wrap.
-            auto separate = builder.neq(sort, heap.tag(source), heap.tag(destination));
-            separate = builder.lor(sort, separate, builder.ulte(sort,
-              builder.add(heap.pointer_sort, source, size), destination));
-            separate = builder.lor(sort, separate, builder.ulte(sort,
-              builder.add(heap.pointer_sort, destination, size), source));
-            heap.require(separate);
-          }
-        }
+        // This marker used to inject hidden memory-safety obligations.
+        // Argument evaluation and the copy itself are explicit GOTO operations;
+        // only selected source ASSERTs may check accessibility/non-overlap.
         add_pc_fallthrough(loc, at_loc);
         break;
       }
@@ -286,7 +284,9 @@ void goto_to_btor2_convertert::process_instructions()
       break;
     }
     }
-    memory.heap.end();
+    memory.end();
+    const auto &event_inputs = expr_converter.event_inputs();
+    info.input_nodes.insert(info.input_nodes.end(), event_inputs.begin() + input_start, event_inputs.end());
     info.last_node = builder.get_node_count();
   }
 }
@@ -300,6 +300,17 @@ void goto_to_btor2_convertert::process_function_call(
   if(is_verifier_nondet_function(function))
   {
     const exprt &lhs = instr.call_lhs();
+    if(lhs.is_nil())
+    {
+      add_pc_fallthrough(loc, at_loc);
+      return;
+    }
+    if(memory.assign(
+         lhs, side_effect_expr_nondett(lhs.type(), instr.source_location())))
+    {
+      add_pc_fallthrough(loc, at_loc);
+      return;
+    }
     if(lhs.id() != ID_symbol)
     {
       conversion_error("nondet call with non-symbol LHS not supported");
@@ -318,19 +329,27 @@ void goto_to_btor2_convertert::process_function_call(
 
     auto &var = it->second;
     // Create (or reuse) a BTOR2 input providing a fresh value each step.
-    auto in_it = nondet_inputs.find(var_id);
+    const irep_idt input_key = optimizations.scalar_blocks
+      ? irep_idt(id2string(var_id) + "$site$" + std::to_string(loc)) : var_id;
+    auto in_it = nondet_inputs.find(input_key);
     btor2_nid_t input_nid = 0;
     if(in_it == nondet_inputs.end())
     {
       input_nid =
-        builder.input(var.sort_nid, var.name + "_nondet");
-      nondet_inputs.emplace(var_id, input_nid);
+        builder.input(var.sort_nid, var.name + "_nondet" +
+          (optimizations.scalar_blocks ? "_site_" + std::to_string(loc) : ""));
+      nondet_inputs.emplace(input_key, input_nid);
     }
     else
     {
       input_nid = in_it->second;
     }
 
+    // Preserve the call-time value in both map versions, independently of
+    // whether its destination has a persistent state after projection.
+    locations[loc].value_node = input_nid;
+    locations[loc].input_nodes.push_back(input_nid);
+    locations[loc].value_sort = var.sort_nid;
     state_updates[var_id].push_back({at_loc, input_nid});
     add_pc_fallthrough(loc, at_loc);
     return;
@@ -361,19 +380,8 @@ void goto_to_btor2_convertert::process_function_call(
       return;
     }
 
-    if(
-      matches_function_name(*fid, "__assert_fail") ||
-      matches_function_name(*fid, "reach_error"))
-    {
-      // __assert_fail / reach_error: property violation。
-      // 编码为 bad 状态 + 终态自环（与 assert 失败一致：路径终止）。
-      assertions.push_back(assertion_infot{
-        loc,
-        false_exprt(),
-        btor2_make_bad_property_name(loc, instr.source_location())});
-      pc_updates[loc].push_back({at_loc, loc});
-      return;
-    }
+    // Selected error calls must already be GOTO ASSERTs. A residual call is
+    // unsupported; do not invent another property or change its PC behavior.
   }
 
   // A missing body may modify memory even when it has no return value.
@@ -423,18 +431,26 @@ void goto_to_btor2_convertert::process_goto(
   btor2_nid_t at_loc,
   const goto_programt::instructiont &instr)
 {
+  if(instr.targets.size() > 1)
+  {
+    conversion_error(
+      "Unsupported multi-target GOTO at location " + std::to_string(loc) +
+      "; source target-selection semantics are unavailable");
+    return;
+  }
   const exprt &guard = instr.condition();
   const btor2_nid_t bool_sort = builder.get_bool_sort();
 
   // 跳转条件（无条件跳转时为 at_loc，条件跳转时为 at_loc ∧ guard）
   btor2_nid_t branch_guard;
+  btor2_nid_t guard_nid = 0;
   if(guard.is_true())
   {
     branch_guard = at_loc;
   }
   else
   {
-    btor2_nid_t guard_nid = expr_converter.convert(guard);
+    guard_nid = expr_converter.convert(guard);
     if(guard_nid == 0)
     {
       log.error() << "Unsupported guard at location " << loc << ": "
@@ -456,55 +472,14 @@ void goto_to_btor2_convertert::process_goto(
     unsigned target_loc = get_target_location(instr.targets.front());
     pc_updates[loc].push_back({branch_guard, target_loc});
   }
-  else
-  {
-    // 多目标 GOTO（罕见：switch jump table、computed goto 残留等）。
-    // 不能让所有目标共用同一守卫——逆序 ITE 链中只有第一个目标会生效。
-    // 正确编码：用 fresh boolean 输入创建互斥守卫，确保每个目标可达。
-    //
-    //   g1 = branch_guard ∧ choice_1
-    //   g2 = branch_guard ∧ ¬choice_1 ∧ choice_2
-    //   g3 = branch_guard ∧ ¬choice_1 ∧ ¬choice_2
-    //   ...
-    warn("Multi-target GOTO at location " + std::to_string(loc) + " (" +
-         std::to_string(instr.targets.size()) +
-         " targets); encoding as nondeterministic choice");
-
-    btor2_nid_t remaining = branch_guard;
-    std::size_t target_idx = 0;
-    for(auto target_it = instr.targets.begin();
-        target_it != instr.targets.end();
-        ++target_it, ++target_idx)
-    {
-      unsigned target_loc = get_target_location(*target_it);
-      auto next_it = std::next(target_it);
-
-      if(next_it == instr.targets.end())
-      {
-        // 最后一个目标：使用剩余守卫（确保穷尽性）
-        pc_updates[loc].push_back({remaining, target_loc});
-      }
-      else
-      {
-        btor2_nid_t choice =
-          fresh_unknown_bool("__goto_choice_" + std::to_string(target_idx));
-        btor2_nid_t take = builder.land(bool_sort, remaining, choice);
-        btor2_nid_t skip = builder.land(bool_sort, remaining, builder.lnot(bool_sort, choice));
-        pc_updates[loc].push_back({take, target_loc});
-        remaining = skip;
-      }
-    }
-  }
-
   // 条件跳转的 fall-through
   if(!guard.is_true())
   {
-    btor2_nid_t guard_nid = expr_converter.convert(guard);
-    if(guard_nid == 0)
-      guard_nid = fresh_unknown_bool("__unknown_guard");
+    // Both successors observe the same evaluation, including nondet operands.
+    // Translating twice can choose different values and admit a spurious stall.
     btor2_nid_t not_guard = builder.lnot(bool_sort, guard_nid);
     btor2_nid_t fall_through = builder.land(bool_sort, at_loc, not_guard);
-    pc_updates[loc].push_back({fall_through, loc + 1});
+    add_pc_fallthrough(loc, fall_through);
   }
 }
 
@@ -518,14 +493,8 @@ void goto_to_btor2_convertert::process_assert(
     instr.condition(),
     btor2_make_bad_property_name(loc, instr.source_location())});
 
-  // C 语义：assert(c) 失败时调用 abort，程序终止。
-  // 编码为：仅当条件成立时 PC 才推进到 loc+1；条件为假时 PC 停滞在 loc
-  // （自环），且 bad 被触发。这样断言失败后不会产生"僵尸路径"继续执行
-  // 下游指令并触发其他 bad，避免复合反例。
-  //
-  // 注意：cond_nid 必须与 generate_properties 中的 bad 谓词使用同一节点，
-  // 否则当条件转换失败（fallback 为 fresh input）时，PC 守卫与 bad 谓词
-  // 会引用不同的 input，破坏"assert 失败则 halt"不变量。
+  // GOTO ASSERT observes its condition; it does not assume it or terminate
+  // execution. Explicit GOTO/ASSUME/abort instructions retain their own effect.
   btor2_nid_t cond_nid = expr_converter.convert(instr.condition());
   if(cond_nid == 0)
     cond_nid = fresh_unknown_bool("__unknown_assert_cond");
@@ -534,14 +503,7 @@ void goto_to_btor2_convertert::process_assert(
   if(!assertions.empty() && assertions.back().loc_number == loc)
     assertions.back().cond_nid = cond_nid;
 
-  btor2_nid_t bool_sort = builder.get_bool_sort();
-  // proceed = at_loc && cond
-  btor2_nid_t proceed = builder.land(bool_sort, at_loc, cond_nid);
-
-  if(loc + 1 < locations.size())
-    pc_updates[loc].push_back({proceed, loc + 1});
-  else
-    pc_updates[loc].push_back({proceed, loc});
+  add_pc_fallthrough(loc, at_loc);
 }
 
 void goto_to_btor2_convertert::process_assume(
@@ -549,21 +511,18 @@ void goto_to_btor2_convertert::process_assume(
   btor2_nid_t at_loc,
   const goto_programt::instructiont &instr)
 {
-  // 保存假设信息
-  assumptions.push_back({loc, instr.condition()});
-
   // 只有假设成立时才继续执行
   btor2_nid_t cond_nid = expr_converter.convert(instr.condition());
   if(cond_nid == 0)
     cond_nid = fresh_unknown_bool("__unknown_assume");
+  assumptions.push_back({loc, cond_nid});
 
   btor2_nid_t bool_sort = builder.get_bool_sort();
   // can_proceed = at_loc && condition
   btor2_nid_t can_proceed = builder.land(bool_sort, at_loc, cond_nid);
-  pc_updates[loc].push_back({can_proceed, loc + 1});
-
-  // 如果假设失败，可以建模为停止（保持当前位置）
-  // 或作为隐式约束
+  add_pc_fallthrough(loc, can_proceed);
+  // generate_properties emits the source ASSUME constraint using this same
+  // condition node. No memory-dependent condition is added.
 }
 
 void goto_to_btor2_convertert::add_pc_fallthrough(unsigned loc, btor2_nid_t at_loc)

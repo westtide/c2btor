@@ -96,6 +96,12 @@ static smt_sortt convert_type_to_smt_sort(const array_typet &type)
     convert_type_to_smt_sort(type.element_type())};
 }
 
+static smt_sortt convert_type_to_smt_sort(const floatbv_typet &type)
+{
+  // Convert floating-point to bitvector for bit-blasting
+  return smt_bit_vector_sortt{type.get_width()};
+}
+
 smt_sortt convert_type_to_smt_sort(const typet &type)
 {
   if(const auto bool_type = type_try_dynamic_cast<bool_typet>(type))
@@ -104,19 +110,28 @@ smt_sortt convert_type_to_smt_sort(const typet &type)
   }
   if(const auto bitvector_type = type_try_dynamic_cast<bitvector_typet>(type))
   {
+    if(const auto floatbv_type = type_try_dynamic_cast<floatbv_typet>(type))
+    {
+      return convert_type_to_smt_sort(*floatbv_type);
+    }
     return convert_type_to_smt_sort(*bitvector_type);
   }
   if(const auto array_type = type_try_dynamic_cast<array_typet>(type))
   {
     return convert_type_to_smt_sort(*array_type);
   }
+  // Note: the SMT-LIB theory-of-strings types (String/RegLan) and the
+  // cprover_string_*/cprover_regex_* built-ins are intentionally not supported
+  // by this incremental back-end; they are lowered only by the non-incremental
+  // smt2_convt (see src/solvers/smt2/smt2_conv.cpp). Such inputs reach the
+  // UNIMPLEMENTED_FEATURE below.
   UNIMPLEMENTED_FEATURE("Generation of SMT formula for type: " + type.pretty());
 }
 
 static smt_termt convert_expr_to_smt(const symbol_exprt &symbol_expr)
 {
-  return smt_identifier_termt{symbol_expr.get_identifier(),
-                              convert_type_to_smt_sort(symbol_expr.type())};
+  return smt_identifier_termt{
+    symbol_expr.identifier(), convert_type_to_smt_sort(symbol_expr.type())};
 }
 
 static smt_termt convert_expr_to_smt(
@@ -182,13 +197,8 @@ static smt_termt make_bitvector_resize_cast(
       "type: " +
       to_type.pretty());
   }
-  if(type_try_dynamic_cast<floatbv_typet>(to_type))
-  {
-    UNIMPLEMENTED_FEATURE(
-      "Generation of SMT formula for type cast to floating-point bitvector "
-      "type: " +
-      to_type.pretty());
-  }
+  // After float lowering, floatbv types are treated as bitvectors.
+  // Same-width casts (e.g., from float_bvt::pack) are handled below.
   const std::size_t from_width = from_type.get_width();
   const std::size_t to_width = to_type.get_width();
   if(to_width == from_width)
@@ -272,8 +282,11 @@ static smt_termt convert_expr_to_smt(
   const floatbv_typecast_exprt &float_cast,
   const sub_expression_mapt &converted)
 {
-  UNIMPLEMENTED_FEATURE(
-    "Generation of SMT formula for floating point type cast expression: " +
+  // Floating-point operations should be lowered to bitvector operations
+  // before reaching this point. If we get here, it means the lowering failed.
+  UNREACHABLE_BECAUSE(
+    "Floating point type cast expression should have been lowered to "
+    "bitvector operations: " +
     float_cast.pretty());
 }
 
@@ -535,8 +548,9 @@ static smt_termt convert_expr_to_smt(
   const ieee_float_equal_exprt &float_equal,
   const sub_expression_mapt &converted)
 {
-  UNIMPLEMENTED_FEATURE(
-    "Generation of SMT formula for floating point equality expression: " +
+  UNREACHABLE_BECAUSE(
+    "Floating point equality expression should have been lowered to "
+    "bitvector operations: " +
     float_equal.pretty());
 }
 
@@ -544,8 +558,9 @@ static smt_termt convert_expr_to_smt(
   const ieee_float_notequal_exprt &float_not_equal,
   const sub_expression_mapt &converted)
 {
-  UNIMPLEMENTED_FEATURE(
-    "Generation of SMT formula for floating point not equal expression: " +
+  UNREACHABLE_BECAUSE(
+    "Floating point not equal expression should have been lowered to "
+    "bitvector operations: " +
     float_not_equal.pretty());
 }
 
@@ -785,8 +800,9 @@ static smt_termt convert_expr_to_smt(
 {
   // This case includes the floating point plus, minus, division and
   // multiplication operations.
-  UNIMPLEMENTED_FEATURE(
-    "Generation of SMT formula for floating point operation expression: " +
+  UNREACHABLE_BECAUSE(
+    "Floating point operation expression should have been lowered to "
+    "bitvector operations: " +
     float_operation.pretty());
 }
 
@@ -1158,8 +1174,9 @@ static smt_termt convert_expr_to_smt(
   const isnan_exprt &is_nan_expr,
   const sub_expression_mapt &converted)
 {
-  UNIMPLEMENTED_FEATURE(
-    "Generation of SMT formula for is not a number expression: " +
+  UNREACHABLE_BECAUSE(
+    "Is not a number expression should have been lowered to "
+    "bitvector operations: " +
     is_nan_expr.pretty());
 }
 
@@ -1167,8 +1184,9 @@ static smt_termt convert_expr_to_smt(
   const isfinite_exprt &is_finite_expr,
   const sub_expression_mapt &converted)
 {
-  UNIMPLEMENTED_FEATURE(
-    "Generation of SMT formula for is finite expression: " +
+  UNREACHABLE_BECAUSE(
+    "Is finite expression should have been lowered to "
+    "bitvector operations: " +
     is_finite_expr.pretty());
 }
 
@@ -1176,8 +1194,9 @@ static smt_termt convert_expr_to_smt(
   const isinf_exprt &is_infinite_expr,
   const sub_expression_mapt &converted)
 {
-  UNIMPLEMENTED_FEATURE(
-    "Generation of SMT formula for is infinite expression: " +
+  UNREACHABLE_BECAUSE(
+    "Is infinite expression should have been lowered to "
+    "bitvector operations: " +
     is_infinite_expr.pretty());
 }
 
@@ -1185,8 +1204,9 @@ static smt_termt convert_expr_to_smt(
   const isnormal_exprt &is_normal_expr,
   const sub_expression_mapt &converted)
 {
-  UNIMPLEMENTED_FEATURE(
-    "Generation of SMT formula for is infinite expression: " +
+  UNREACHABLE_BECAUSE(
+    "Is normal expression should have been lowered to "
+    "bitvector operations: " +
     is_normal_expr.pretty());
 }
 
@@ -1643,12 +1663,6 @@ static smt_termt dispatch_expr_to_smt_conversion(
   {
     return convert_expr_to_smt(*multiply, converted);
   }
-#if 0
-  else if(expr.id() == ID_floatbv_rem)
-  {
-    convert_floatbv_rem(to_binary_expr(expr));
-  }
-#endif
   if(const auto address_of = expr_try_dynamic_cast<address_of_exprt>(expr))
   {
     return convert_expr_to_smt(*address_of, converted, object_map);

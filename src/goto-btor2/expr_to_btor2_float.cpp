@@ -1,18 +1,21 @@
+// SPDX-License-Identifier: BSD-4-Clause
+// SPDX-FileCopyrightText: 2026 C2BTOR contributors
+
 /*******************************************************************\
 
 Module: Expression-to-BTOR2 conversion -- floating-point operations
 
-Author: Based on CBMC project
+Authors: C2BTOR contributors; CBMC attribution is retained in LICENSES/
 
 \*******************************************************************/
 
 /// \file
 /// 浮点相关表达式到 BTOR2 的转换
 ///
-/// 浮点算术直接在 BTOR2 构建器上生成自包含的 IEEE 754 位级电路：
-/// 解码符号/阶码/尾数，在扩展定点有效数上计算，最后做一次
-/// 按当前 IEEE 舍入模式完成舍入；NaN/Inf/零等特殊值走显式分支。
-/// 电路不含自由位，也不引入任何全局假设。
+/// 基本算术、类型转换和 round_to_integral 复用 CBMC float_utilst。
+/// propt 适配器把布尔门映射为 BTOR2；除法的商/余数使用功能性 udiv/urem。
+/// sqrt/FMA/remainder/fmod 保留专用 IEEE 电路。运行时舍入模式按值选择；
+/// CBMC 对非法模式保留的任意舍入结果是 input，不是额外约束或性质。
 ///
 /// 包含的转换方法：
 /// - convert_floatbv_typecast: 浮点类型转换（float↔int, float↔float）
@@ -25,7 +28,7 @@ Author: Based on CBMC project
 /// - 算术/向浮点转换支持五种 CBMC IEEE 舍入模式；向整数转换截断到零。
 /// - sqrt/FMA 使用当前模式；remainder/fmod 的精确结果不依赖当前模式。
 /// - binary32/binary64 包含非正规数和渐进下溢；其他格式拒绝。
-/// - 动态舍入模式及整数转换定义域由执行路径上的 model_limit 检查。
+/// - 仅编码输入 GOTO 的浮点数据操作，不插入辅助性质或停止条件。
 
 #include "expr_to_btor2.h"
 #include "btor2_type_utils.h"
@@ -62,18 +65,35 @@ btor2_nid_t expr_to_btor2t::convert_float_rounding_mode(const exprt &mode)
   }
   const auto width = get_width(mode.type());
   const auto actual = convert(mode);
-  if(!width || !actual || !memory)
+  if(!width || !actual)
     return 0;
-  const auto sort = builder.get_or_create_bitvec_sort(*width);
+  const auto small_sort = builder.get_or_create_bitvec_sort(3);
+  const auto full_sort = builder.get_or_create_bitvec_sort(*width);
+  const auto small = *width == 3 ? actual : *width > 3
+    ? builder.slice(small_sort, actual, 2, 0)
+    : builder.uext(small_sort, actual, 3 - *width);
+  // Preserve all five CBMC mode comparisons. Truncating first would turn
+  // e.g. 8 into round-to-even. Invalid full-width values map to code 7, for
+  // which CBMC's rounding decision retains its unspecified-value branch.
   auto valid = *width < 3 ? builder.one(builder.get_bool_sort())
-    : builder.ulte(builder.get_bool_sort(), actual, builder.constd(sort, 4));
+    : builder.ulte(builder.get_bool_sort(), actual, builder.constd(full_sort, 4));
   if(is_signed(mode.type()))
     valid = builder.land(builder.get_bool_sort(), valid,
-                         builder.sgte(builder.get_bool_sort(), actual, builder.zero(sort)));
-  memory->heap.require(valid, true);
-  return *width == 3 ? actual : *width > 3
-    ? builder.slice(builder.get_or_create_bitvec_sort(3), actual, 2, 0)
-    : builder.uext(builder.get_or_create_bitvec_sort(3), actual, 3 - *width);
+      builder.sgte(builder.get_bool_sort(), actual, builder.zero(full_sort)));
+  return builder.ite(small_sort, valid, small, builder.constd(small_sort, 7));
+}
+
+btor2_nid_t expr_to_btor2t::convert_float_round_to_integral(const exprt &expr)
+{
+  if(expr.operands().size() != 2 || expr.type().id() != ID_floatbv ||
+     !supported_format(expr.type()))
+    return 0;
+  const auto width = get_width(expr.type());
+  const auto value = convert(expr.operands()[0]);
+  const auto mode = convert_float_rounding_mode(expr.operands()[1]);
+  if(!width || !value || !mode)
+    return 0;
+  return ieee754_aritht(builder, *width, mode).round_to_integral(value);
 }
 
 btor2_nid_t expr_to_btor2t::convert_float_math(const exprt &expr)
@@ -118,19 +138,12 @@ bool expr_to_btor2t::require_float_rounding_mode(
                   << messaget::eom;
     return false;
   }
-  // The rounding variable is mutable. Guard the current value at this
-  // instruction, rather than treating its initializer as a global constant.
-  const auto width = get_width(mode.type());
-  const auto actual = convert(mode);
-  if(!width || !actual || !memory)
-    return false;
-  memory->heap.require(
-    builder.eq(
-      builder.get_bool_sort(),
-      actual,
-      builder.constd(builder.get_or_create_bitvec_sort(*width), expected)),
-    true);
-  return true;
+  // This implementation of float-to-integer conversion only implements
+  // truncation. A nonconstant rounding operand is unsupported, not a
+  // condition to impose on the program's execution.
+  log.warning() << "Nonconstant float-to-integer rounding mode is unsupported"
+                << messaget::eom;
+  return false;
 }
 
 btor2_nid_t
@@ -186,14 +199,10 @@ expr_to_btor2t::convert_floatbv_typecast(const floatbv_typecast_exprt &expr)
     src_type.id() == ID_floatbv &&
     (dest_type.id() == ID_signedbv || dest_type.id() == ID_unsignedbv))
   {
-    if(!memory)
-      return 0;
-    // A non-representable C cast has no defined result. Report the boundary
-    // and freeze this execution instead of silently producing zero/wrapping.
-    memory->heap.require(
-      arith.float_to_int_valid(op, *dest_width, dest_type.id() == ID_signedbv),
-      true);
-    return arith.cast_float_to_int(op, *dest_width);
+    // Directly reuse CBMC's signed/unsigned truncation implementation;
+    // source instrumentation expresses any selected cast checks.
+    return arith.cast_float_to_int(
+      op, *dest_width, dest_type.id() == ID_signedbv);
   }
 
   log.warning() << "Unsupported floatbv_typecast for BTOR2: " << src_type.id()

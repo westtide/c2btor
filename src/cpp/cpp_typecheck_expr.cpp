@@ -981,7 +981,8 @@ void cpp_typecheckt::typecheck_expr_this(exprt &expr)
   if(cpp_scopes.current_scope().class_identifier.empty())
   {
     error().source_location=expr.find_source_location();
-    error() << "`this' is not allowed here" << eom;
+    error() << quote_begin << "this" << quote_end << " is not allowed here"
+            << eom;
     throw 0;
   }
 
@@ -1170,7 +1171,7 @@ void cpp_typecheckt::typecheck_expr_member(
       {
         // it must be a static component
         const struct_typet::componentt &pcomp =
-          type.get_component(to_symbol_expr(symbol_expr).get_identifier());
+          type.get_component(to_symbol_expr(symbol_expr).identifier());
 
         if(pcomp.is_nil())
         {

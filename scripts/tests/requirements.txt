@@ -1,0 +1,2 @@
+-r ../requirements-witness.txt
+jsonschema>=4.23,<5

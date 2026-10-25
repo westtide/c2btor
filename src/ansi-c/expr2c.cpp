@@ -2862,7 +2862,7 @@ expr2ct::convert_code_frontend_decl(const codet &src, unsigned indent)
   std::string dest=indent_str(indent);
 
   const symbolt *symbol=nullptr;
-  if(!ns.lookup(to_symbol_expr(src.op0()).get_identifier(), symbol))
+  if(!ns.lookup(to_symbol_expr(src.op0()).identifier(), symbol))
   {
     if(symbol->is_file_local &&
        (src.op0().type().id()==ID_code || symbol->is_static_lifetime))
@@ -3732,6 +3732,16 @@ std::string expr2ct::convert_with_precedence(
       return convert_function(src, "signbit");
     else
       return convert_function(src, "SIGN");
+  }
+
+  else if(src.id() == ID_floatbv_fma)
+  {
+    // Print only the 3 mathematical operands, omitting the rounding mode
+    // (4th operand) to produce valid C syntax: fma(a, b, c)
+    const auto &fma_expr = to_floatbv_fma_expr(src);
+    return "fma(" + convert(fma_expr.op_multiply_lhs()) + ", " +
+           convert(fma_expr.op_multiply_rhs()) + ", " +
+           convert(fma_expr.op_add()) + ")";
   }
 
   else if(src.id()==ID_popcount)

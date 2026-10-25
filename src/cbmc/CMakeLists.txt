@@ -66,13 +66,15 @@ if(NOT WIN32)
     DESTINATION etc/bash_completion.d RENAME c2btor COMPONENT c2btor)
 endif()
 
-install(FILES ${CMAKE_SOURCE_DIR}/LICENSE ${CMAKE_SOURCE_DIR}/LICENSE.c2btor
-  ${CMAKE_SOURCE_DIR}/README.md ${CMAKE_SOURCE_DIR}/README.zh-CN.md
+install(FILES ${CMAKE_SOURCE_DIR}/README.md ${CMAKE_SOURCE_DIR}/README.zh-CN.md
+  ${CMAKE_SOURCE_DIR}/LICENSE ${CMAKE_SOURCE_DIR}/LICENSE.c2btor
   DESTINATION ${CMAKE_INSTALL_DATADIR}/doc/c2btor COMPONENT c2btor)
+install(DIRECTORY ${CMAKE_SOURCE_DIR}/LICENSES/
+  DESTINATION ${CMAKE_INSTALL_DATADIR}/doc/c2btor/LICENSES COMPONENT c2btor)
 
 install(FILES
-  ${CMAKE_SOURCE_DIR}/scripts/c2btor_witness.py
-  ${CMAKE_SOURCE_DIR}/scripts/c2btor_solver.py
-  ${CMAKE_SOURCE_DIR}/scripts/c2btor_model_contract.py
-  ${CMAKE_SOURCE_DIR}/scripts/run_witness_svcomp.py
+  ${CMAKE_SOURCE_DIR}/scripts/requirements-witness.txt
   DESTINATION ${CMAKE_INSTALL_DATADIR}/c2btor/scripts COMPONENT c2btor)
+
+install(FILES ${CMAKE_SOURCE_DIR}/docs/images/c2btor-framework.png
+  DESTINATION ${CMAKE_INSTALL_DATADIR}/doc/c2btor/docs/images COMPONENT c2btor)

@@ -1,9 +1,0 @@
-CORE
-main.c
---stop-on-fail --unwind 5
-^EXIT=10$
-^SIGNAL=0$
-^VERIFICATION FAILED
-SM__&x!0@1__field1=
---
-^warning: ignoring

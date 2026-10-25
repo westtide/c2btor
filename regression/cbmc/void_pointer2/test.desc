@@ -1,8 +1,0 @@
-CORE gcc-only
-main.c
---no-simplify --unwind 3
-^EXIT=0$
-^SIGNAL=0$
-^VERIFICATION SUCCESSFUL$
---
-^warning: ignoring

@@ -1,7 +1,11 @@
+// SPDX-License-Identifier: BSD-4-Clause
+// SPDX-FileCopyrightText: 2026 C2BTOR contributors
+
 #include "lower_array_operations.h"
 
 #include <util/arith_tools.h>
 #include <util/c_types.h>
+#include <util/config.h>
 #include <util/fresh_symbol.h>
 #include <util/message.h>
 #include <util/namespace.h>
@@ -38,7 +42,8 @@ std::optional<exprt> byte_array_object(exprt pointer, const namespacet &ns)
   const auto &element = type.element_type();
   if(
     (element.id() != ID_signedbv && element.id() != ID_unsignedbv) ||
-    to_bitvector_type(element).get_width() != 8 || type.size().is_nil())
+    to_bitvector_type(element).get_width() != config.ansi_c.char_width ||
+    type.size().is_nil())
     return {};
   return object;
 }
@@ -213,8 +218,12 @@ void lower_array_operations(
             src,
             typecast_exprt::conditional_cast(source, byte_pointer_type),
             location));
-        const auto snapshot =
-          auxiliary(array_typet(unsigned_char_type(), size), "copy_snapshot");
+        // Its address is used only by the two private byte-copy loops below.
+        // Mark the type before DECL so the lifetime analysis can prove reuse
+        // without treating this generated runtime array as a user VLA.
+        array_typet snapshot_type(unsigned_char_type(), size);
+        snapshot_type.set("C_c2btor_copy_snapshot", true);
+        const auto snapshot = auxiliary(snapshot_type, "copy_snapshot");
         loop(index_exprt(snapshot, index), element(source_object, src), true);
         loop(element(destination_object, dst), index_exprt(snapshot, index), true);
         emit(goto_programt::make_dead(snapshot, location));

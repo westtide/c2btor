@@ -1,7 +1,6 @@
 find_package(BISON REQUIRED)
 find_package(FLEX REQUIRED)
 
-
 #   Add a bison target named 'parser'.
 macro(generic_bison name)
     set(bison_header "${name}_y.tab.h")
@@ -83,7 +82,6 @@ add_subdirectory(xmllang)
 add_subdirectory(goto-checker)
 add_subdirectory(goto-programs)
 add_subdirectory(goto-symex)
-add_subdirectory(goto-inspect)
 add_subdirectory(goto-btor2)
 add_subdirectory(json)
 add_subdirectory(json-symtab-language)
@@ -95,18 +93,8 @@ add_subdirectory(statement-list)
 add_subdirectory(util)
 
 add_subdirectory(cbmc)
-add_subdirectory(cprover)
-add_subdirectory(crangler)
-add_subdirectory(goto-cc)
 add_subdirectory(goto-instrument)
-add_subdirectory(goto-analyzer)
-add_subdirectory(goto-diff)
-add_subdirectory(goto-harness)
-add_subdirectory(goto-synthesizer)
-add_subdirectory(symtab2gb)
-add_subdirectory(libcprover-cpp)
-add_subdirectory(goto-bmc)
 
-if(WITH_MEMORY_ANALYZER)
-add_subdirectory(memory-analyzer)
-endif()
+# Preserve GOTO-IR analyses and their standalone driver as explicit targets.
+# The converter-only default build and product install remain independent.
+add_subdirectory(goto-analyzer EXCLUDE_FROM_ALL)

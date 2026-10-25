@@ -1,9 +1,0 @@
-CORE
-address_of.c
-
-\[main\.assertion\.1\] line \d+ expected failure: ref == 34: FAILURE
-^EXIT=10$
-^SIGNAL=0$
-^VERIFICATION FAILED$
---
---

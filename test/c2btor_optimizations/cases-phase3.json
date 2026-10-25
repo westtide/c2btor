@@ -1,0 +1,172 @@
+{
+  "scope": "Phase 3 scalar-block fixed-input regressions; no model checker or loop unwinding",
+  "cases": [
+    {
+      "name": "scalar-wrap-truncate",
+      "source": "phase3_wrap.c",
+      "inputs": [
+        4294967295
+      ],
+      "required_nondet_calls": 1,
+      "scalar_block_checks": true,
+      "minimum_merged_assertions": 1
+    },
+    {
+      "name": "scalar-diamond-skipped-assertion",
+      "source": "phase3_diamond.c",
+      "inputs": [
+        0,
+        5
+      ],
+      "required_nondet_calls": 2,
+      "scalar_block_checks": true,
+      "unexecuted_assertions": [
+        "optimization-skipped-assertion"
+      ]
+    },
+    {
+      "name": "scalar-branch-then",
+      "source": "phase3_branch.c",
+      "inputs": [
+        1,
+        5
+      ],
+      "required_nondet_calls": 2,
+      "scalar_block_checks": true
+    },
+    {
+      "name": "scalar-branch-else",
+      "source": "phase3_branch.c",
+      "inputs": [
+        0,
+        5
+      ],
+      "required_nondet_calls": 2,
+      "scalar_block_checks": true
+    },
+    {
+      "name": "scalar-loop-70-static-state",
+      "source": "phase3_loop.c",
+      "inputs": [
+        70
+      ],
+      "required_nondet_calls": 1,
+      "state_checks": [
+        {
+          "symbol_regex": "^static_total$",
+          "present": true,
+          "width": 32
+        }
+      ],
+      "scalar_block_checks": true
+    },
+    {
+      "name": "scalar-block-local-temp",
+      "source": "phase3_local_temp.c",
+      "inputs": [
+        5
+      ],
+      "required_nondet_calls": 1,
+      "state_checks": [
+        {
+          "symbol_regex": "::block_temp$",
+          "present": false,
+          "with_flag": "--goto-btor2-scalar-blocks",
+          "width": 32
+        },
+        {
+          "symbol_regex": "::result$",
+          "present": false,
+          "with_flag": "--goto-btor2-scalar-blocks",
+          "width": 32
+        }
+      ],
+      "scalar_block_checks": true,
+      "minimum_merged_assertions": 1
+    },
+    {
+      "name": "scalar-independent-nondet-shared-destination",
+      "source": "phase3_nondet_destination.c",
+      "inputs": [
+        5,
+        9
+      ],
+      "required_nondet_calls": 2,
+      "compare_observations": [
+        {
+          "name": "first-copy",
+          "assign_symbol_regex": "::first$",
+          "expected_unsigned_value": 5
+        },
+        {
+          "name": "second-copy",
+          "assign_symbol_regex": "::second$",
+          "expected_unsigned_value": 9
+        }
+      ],
+      "scalar_block_checks": true
+    },
+    {
+      "name": "scalar-assert-before-later-assume",
+      "source": "phase3_assert_before_assume.c",
+      "inputs": [
+        7
+      ],
+      "required_nondet_calls": 1,
+      "target": "optimization-prefix-failure",
+      "constraint_after_target": true,
+      "scalar_block_checks": true
+    },
+    {
+      "name": "scalar-vla-decl-latching",
+      "source": "phase2_vla_latched.c",
+      "inputs": [
+        4
+      ],
+      "required_nondet_calls": 1,
+      "array_storage_checks": [
+        {
+          "symbol_regex": "::a$",
+          "logical_when_enabled": true,
+          "rank": 1,
+          "element_width": 32,
+          "latched_dimensions": 1
+        }
+      ],
+      "scalar_block_checks": true
+    },
+    {
+      "name": "scalar-unused-vla-dimension-effect",
+      "source": "phase2_dimension_effect.c",
+      "inputs": [],
+      "array_storage_checks": [
+        {
+          "symbol_regex": "::a$",
+          "logical_when_enabled": true,
+          "rank": 1,
+          "element_width": 32,
+          "unused_storage": true,
+          "latched_dimensions": 0,
+          "require_object_data": false
+        }
+      ],
+      "scalar_block_checks": true
+    },
+    {
+      "name": "scalar-singleton-dead-float-to-int",
+      "source": "phase3_dead_float_to_int.c",
+      "inputs": [
+        1069547520
+      ],
+      "required_nondet_calls": 1,
+      "compare_observations": [
+        {
+          "name": "discarded-cast",
+          "assign_symbol_regex": "::discarded$",
+          "expected_unsigned_value": 1
+        }
+      ],
+      "scalar_block_checks": true
+    }
+  ]
+}

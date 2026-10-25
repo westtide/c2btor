@@ -1,9 +1,0 @@
-ansi-c
-cpp
-goto-cc
-goto-programs
-json
-langapi # should go away
-linking
-sys # system
-util

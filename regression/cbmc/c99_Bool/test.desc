@@ -1,8 +1,0 @@
-CORE no-new-smt
-main.c
---function foo
-^EXIT=0$
-^SIGNAL=0$
-^VERIFICATION SUCCESSFUL$
---
-^warning: ignoring

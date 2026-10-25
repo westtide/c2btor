@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: BSD-4-Clause
+// SPDX-FileCopyrightText: 2026 C2BTOR contributors
+
 #include <util/std_expr.h>
 
 #include "goto_btor2_converter.h"
@@ -23,6 +26,9 @@ void goto_to_btor2_convertert::process_assign(
   }
   if(memory.assign(lhs, rhs))
   {
+    if(!instruction.source_location().get("c2btor_nondet_summary_group").empty())
+      locations[loc].summary_input_node =
+        memory.logical_arrays.last_nondet_input();
     add_pc_fallthrough(loc, at_loc);
     return;
   }
@@ -48,7 +54,8 @@ void goto_to_btor2_convertert::process_assign(
     return;
   }
   const auto it = variables.find(id);
-  if(it == variables.end() || !it->second.state_nid)
+  if(it == variables.end() ||
+     (!it->second.state_nid && !it->second.local_nid))
   {
     conversion_error("Missing scalar state for " + id2string(id));
     return;
@@ -58,6 +65,11 @@ void goto_to_btor2_convertert::process_assign(
     conversion_error(
       "Failed to convert RHS expression at " + std::to_string(loc));
   else
-    state_updates[id].push_back({at_loc, value});
+  {
+    locations[loc].value_node = value;
+    locations[loc].value_sort = it->second.sort_nid;
+    if(it->second.state_nid)
+      state_updates[id].push_back({at_loc, value});
+  }
   add_pc_fallthrough(loc, at_loc);
 }

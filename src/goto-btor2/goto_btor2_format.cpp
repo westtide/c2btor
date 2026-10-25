@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: BSD-4-Clause
+// SPDX-FileCopyrightText: 2026 C2BTOR contributors
+
 #include <util/arith_tools.h>
 #include <util/c_types.h>
 #include <util/config.h>
@@ -89,10 +92,10 @@ bool goto_to_btor2_convertert::process_sprintf_hex(
   {
     if(width < memory.heap.pointer_bits)
       return builder.uext(
-        memory.heap.pointer_sort, n, memory.heap.pointer_bits - width);
+        memory.heap.size_sort, n, memory.heap.pointer_bits - width);
     if(width > memory.heap.pointer_bits)
       return builder.slice(
-        memory.heap.pointer_sort, n, memory.heap.pointer_bits - 1, 0);
+        memory.heap.size_sort, n, memory.heap.pointer_bits - 1, 0);
     return n;
   };
   const auto saved_guard = memory.heap.path_guard;
@@ -111,7 +114,7 @@ bool goto_to_btor2_convertert::process_sprintf_hex(
       builder.add(sort, digit, constant((upper ? 'A' : 'a') - 10)));
     memory.heap.store(
       memory.heap.add_offset(
-        destination, builder.constd(memory.heap.pointer_sort, i)),
+        destination, builder.constd(memory.heap.size_sort, i)),
       width == byte_width
         ? character
         : builder.slice(byte_sort, character, byte_width - 1, 0),

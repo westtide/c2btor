@@ -1,0 +1,384 @@
+{
+  "scope": "Phase 4 array-block supplied finite regressions; common phase1+2+3; no model checker",
+  "cases": [
+    {
+      "name": "array-read-same-index",
+      "source": "phase4_store_read.c",
+      "inputs": [
+        1,
+        1
+      ],
+      "required_nondet_calls": 2,
+      "scalar_block_checks": true,
+      "array_storage_checks": [
+        {
+          "symbol_regex": "::a$",
+          "logical_when_enabled": true,
+          "rank": 1,
+          "element_width": 32,
+          "latched_dimensions": 0
+        }
+      ],
+      "compare_observations": [
+        {
+          "name": "observed",
+          "assign_symbol_regex": "::observed$",
+          "expected_unsigned_value": 7
+        }
+      ],
+      "state_checks": [
+        {
+          "symbol_regex": "::observed$",
+          "present": false,
+          "width": 32,
+          "with_flag": "--goto-btor2-array-blocks"
+        }
+      ],
+      "array_block_checks": true,
+      "minimum_merged_array_assertions": 1
+    },
+    {
+      "name": "array-read-other-index",
+      "source": "phase4_store_read.c",
+      "inputs": [
+        1,
+        2
+      ],
+      "required_nondet_calls": 2,
+      "scalar_block_checks": true,
+      "array_storage_checks": [
+        {
+          "symbol_regex": "::a$",
+          "logical_when_enabled": true,
+          "rank": 1,
+          "element_width": 32,
+          "latched_dimensions": 0
+        }
+      ],
+      "compare_observations": [
+        {
+          "name": "observed",
+          "assign_symbol_regex": "::observed$",
+          "expected_unsigned_value": 0
+        }
+      ],
+      "state_checks": [
+        {
+          "symbol_regex": "::observed$",
+          "present": false,
+          "width": 32,
+          "with_flag": "--goto-btor2-array-blocks"
+        }
+      ],
+      "array_block_checks": true,
+      "minimum_merged_array_assertions": 1
+    },
+    {
+      "name": "array-last-write",
+      "source": "phase4_last_write.c",
+      "inputs": [
+        1,
+        5,
+        9
+      ],
+      "required_nondet_calls": 3,
+      "scalar_block_checks": true,
+      "array_storage_checks": [
+        {
+          "symbol_regex": "::a$",
+          "logical_when_enabled": true,
+          "rank": 1,
+          "element_width": 32,
+          "latched_dimensions": 0
+        }
+      ],
+      "compare_observations": [
+        {
+          "name": "observed",
+          "assign_symbol_regex": "::observed$",
+          "expected_unsigned_value": 9
+        }
+      ],
+      "array_block_checks": true,
+      "minimum_merged_array_assertions": 1
+    },
+    {
+      "name": "array-branch-then",
+      "source": "phase4_branch_join.c",
+      "inputs": [
+        1
+      ],
+      "required_nondet_calls": 1,
+      "scalar_block_checks": true,
+      "array_storage_checks": [
+        {
+          "symbol_regex": "::a$",
+          "logical_when_enabled": true,
+          "rank": 1,
+          "element_width": 32,
+          "latched_dimensions": 0
+        }
+      ],
+      "compare_observations": [
+        {
+          "name": "observed",
+          "assign_symbol_regex": "::observed$",
+          "expected_unsigned_value": 18
+        }
+      ],
+      "array_block_checks": true,
+      "minimum_merged_array_assertions": 1
+    },
+    {
+      "name": "array-branch-else",
+      "source": "phase4_branch_join.c",
+      "inputs": [
+        0
+      ],
+      "required_nondet_calls": 1,
+      "scalar_block_checks": true,
+      "array_storage_checks": [
+        {
+          "symbol_regex": "::a$",
+          "logical_when_enabled": true,
+          "rank": 1,
+          "element_width": 32,
+          "latched_dimensions": 0
+        }
+      ],
+      "compare_observations": [
+        {
+          "name": "observed",
+          "assign_symbol_regex": "::observed$",
+          "expected_unsigned_value": 12
+        }
+      ],
+      "array_block_checks": true,
+      "minimum_merged_array_assertions": 1
+    },
+    {
+      "name": "array-assert-store-snapshots",
+      "source": "phase4_assert_versions.c",
+      "inputs": [
+        1
+      ],
+      "required_nondet_calls": 1,
+      "scalar_block_checks": true,
+      "array_storage_checks": [
+        {
+          "symbol_regex": "::a$",
+          "logical_when_enabled": true,
+          "rank": 1,
+          "element_width": 32,
+          "latched_dimensions": 0
+        }
+      ],
+      "array_block_checks": true,
+      "minimum_merged_array_assertions": 2
+    },
+    {
+      "name": "array-loop-70",
+      "source": "phase4_loop.c",
+      "inputs": [
+        70
+      ],
+      "required_nondet_calls": 1,
+      "scalar_block_checks": true,
+      "array_storage_checks": [
+        {
+          "symbol_regex": "::a$",
+          "logical_when_enabled": true,
+          "rank": 1,
+          "element_width": 32,
+          "latched_dimensions": 0
+        }
+      ],
+      "array_block_checks": true,
+      "minimum_merged_array_assertions": 1
+    },
+    {
+      "name": "array-vla-latched-stride",
+      "source": "phase4_vla_latched_stride.c",
+      "inputs": [
+        2
+      ],
+      "required_nondet_calls": 1,
+      "scalar_block_checks": true,
+      "array_storage_checks": [
+        {
+          "symbol_regex": "::a$",
+          "logical_when_enabled": true,
+          "rank": 2,
+          "element_width": 32,
+          "latched_dimensions": 1,
+          "allow_block_local_storage": true
+        }
+      ],
+      "array_block_checks": true,
+      "minimum_merged_array_assertions": 1
+    },
+    {
+      "name": "array-loop-vla-recapture",
+      "source": "phase4_loop_vla_latched.c",
+      "inputs": [
+        2
+      ],
+      "required_nondet_calls": 1,
+      "scalar_block_checks": true,
+      "array_storage_checks": [
+        {
+          "symbol_regex": "::a$",
+          "logical_when_enabled": true,
+          "rank": 2,
+          "element_width": 32,
+          "latched_dimensions": 1,
+          "allow_block_local_storage": true
+        }
+      ],
+      "array_block_checks": true,
+      "minimum_merged_array_assertions": 1
+    },
+    {
+      "name": "array-independent-roots",
+      "source": "phase4_independent_arrays.c",
+      "inputs": [
+        1
+      ],
+      "required_nondet_calls": 1,
+      "scalar_block_checks": true,
+      "array_storage_checks": [
+        {
+          "symbol_regex": "::a$",
+          "logical_when_enabled": true,
+          "rank": 1,
+          "element_width": 32,
+          "latched_dimensions": 0
+        },
+        {
+          "symbol_regex": "::b$",
+          "logical_when_enabled": true,
+          "rank": 1,
+          "element_width": 32,
+          "latched_dimensions": 0
+        },
+        {
+          "symbol_regex": "::indices$",
+          "logical_when_enabled": true,
+          "rank": 1,
+          "element_width": 32,
+          "latched_dimensions": 0
+        }
+      ],
+      "compare_observations": [
+        {
+          "name": "observed",
+          "assign_symbol_regex": "::observed$",
+          "expected_unsigned_value": 79
+        }
+      ],
+      "array_block_checks": true,
+      "minimum_merged_array_assertions": 1
+    },
+    {
+      "name": "array-fallback-address-escape",
+      "source": "phase2_address_escape.c",
+      "inputs": [
+        1
+      ],
+      "array_storage_checks": [
+        {
+          "symbol_regex": "::a$",
+          "logical_when_enabled": false
+        }
+      ],
+      "scalar_block_checks": true,
+      "array_block_checks": true
+    },
+    {
+      "name": "array-fallback-byte-alias",
+      "source": "phase2_byte_alias.c",
+      "inputs": [
+        0
+      ],
+      "array_storage_checks": [
+        {
+          "symbol_regex": "::a$",
+          "logical_when_enabled": false
+        }
+      ],
+      "scalar_block_checks": true,
+      "array_block_checks": true
+    },
+    {
+      "name": "array-pointer-identity",
+      "source": "phase2_pointer_identity.c",
+      "inputs": [
+        1
+      ],
+      "compare_observations": [
+        {
+          "name": "pointer_bits",
+          "assign_symbol_regex": "::pointer_bits$"
+        }
+      ],
+      "array_storage_checks": [
+        {
+          "symbol_regex": "::logical_before_object$",
+          "logical_when_enabled": true,
+          "rank": 1,
+          "element_width": 32
+        }
+      ],
+      "scalar_block_checks": true,
+      "array_block_checks": true
+    },
+    {
+      "name": "array-generic-null",
+      "source": "phase2_generic_alias.c",
+      "inputs": [
+        0,
+        1
+      ],
+      "compare_observations": [
+        {
+          "name": "pointer_bits",
+          "assign_symbol_regex": "::return_value_pointer_integer$"
+        }
+      ],
+      "array_storage_checks": [
+        {
+          "symbol_regex": "::fallback_array$",
+          "logical_when_enabled": false
+        }
+      ],
+      "scalar_block_checks": true,
+      "array_block_checks": true
+    },
+    {
+      "name": "array-bool-normalization",
+      "source": "phase2_bool.c",
+      "inputs": [
+        1,
+        2
+      ],
+      "array_storage_checks": [
+        {
+          "symbol_regex": "^static_flags$",
+          "logical_when_enabled": true,
+          "rank": 1,
+          "element_width": 1,
+          "static_lifetime": true
+        },
+        {
+          "symbol_regex": "::automatic_flags$",
+          "logical_when_enabled": true,
+          "rank": 1,
+          "element_width": 1,
+          "static_lifetime": false
+        }
+      ],
+      "scalar_block_checks": true,
+      "array_block_checks": true
+    }
+  ]
+}

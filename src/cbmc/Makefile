@@ -1,5 +1,4 @@
 SRC = c_test_input_generator.cpp \
-      btor2_demo.cpp \
       cbmc_languages.cpp \
       cbmc_main.cpp \
       cbmc_parse_options.cpp \

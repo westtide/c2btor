@@ -4,11 +4,25 @@ add_library(goto-btor2
   object_copy.cpp
   memory_capacity.cpp
   memory_capacity.h
+  symbolic_heap_cells.cpp
+  symbolic_heap_cells.h
   heap_model.h
   memory_access.cpp
   memory_access.h
+  logical_arrays.cpp
+  logical_arrays.h
+  array_loop_summary.cpp
+  array_loop_summary.h
+  array_uniform_pruning.cpp
+  array_uniform_pruning.h
+  array_relation_pruning.cpp
+  array_relation_pruning.h
+  scalar_loop_summary.cpp
+  scalar_loop_summary.h
   btor2_builder.cpp
   btor2_builder.h
+  btor2_prop.h
+  btor2_float.h
   btor2_type_utils.cpp
   btor2_type_utils.h
   expr_to_btor2.cpp
@@ -22,11 +36,21 @@ add_library(goto-btor2
   expr_to_btor2_pointers.cpp
   goto_btor2.cpp
   goto_btor2.h
+  source_event_provenance.cpp
+  source_event_provenance.h
   goto_btor2_format.cpp
   goto_btor2_assign.cpp
   goto_btor2_collect.cpp
   goto_btor2_converter.h
   goto_btor2_instructions.cpp
+  goto_btor2_lbe.cpp
+  scalar_block_liveness.cpp
+  scalar_block_liveness.h
+  scalar_projection.cpp
+  scalar_projection.h
+  optimization_options.h
+  pre_state_optimization.cpp
+  pre_state_optimization.h
   goto_btor2_unroll.cpp
   goto_btor2_unroll.h
   simplify_callback_targets.cpp

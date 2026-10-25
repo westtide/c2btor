@@ -13,6 +13,9 @@ Author: Daniel Kroening, kroening@kroening.com
 
 #include <util/config.h>
 #include <util/exit_codes.h>
+#include <util/expr_util.h>
+#include <util/find_symbols.h>
+#include <util/pointer_expr.h>
 #include <util/help_formatter.h>
 #include <util/invariant.h>
 #include <util/unicode.h>
@@ -24,7 +27,6 @@ Author: Daniel Kroening, kroening@kroening.com
 #include <goto-programs/process_goto_program.h>
 #include <goto-programs/read_goto_binary.h>
 #include <goto-programs/remove_skip.h>
-#include <goto-programs/remove_unused_functions.h>
 #include <goto-programs/set_properties.h>
 #include <goto-programs/show_goto_functions.h>
 #include <goto-programs/show_properties.h>
@@ -54,30 +56,81 @@ Author: Daniel Kroening, kroening@kroening.com
 #include <goto-instrument/full_slicer.h>
 #include <goto-instrument/nondet_static.h>
 #include <goto-instrument/reachability_slicer.h>
-#include <goto-instrument/unwind.h>
-#include <goto-programs/unwindset.h>
 #include <goto-symex/path_storage.h>
 #include <langapi/language.h>
 #include <langapi/mode.h>
 #include <pointer-analysis/add_failed_symbols.h>
 
 #include "c_test_input_generator.h"
-#include "btor2_demo.h"
 
 #include <goto-btor2/goto_btor2.h>
+#include <algorithm>
 #include <limits>
+#include <map>
 #include <stdexcept>
 #include <goto-btor2/simplify_callback_targets.h>
 #include <goto-btor2/lower_array_operations.h>
 #include <goto-btor2/lower_heap_operations.h>
 #include <goto-btor2/lower_float_operations.h>
-#include <goto-btor2/goto_btor2_unroll.h>
 #include <xmllang/graphml.h>
 
 #include <cstdlib> // exit()
+#include <filesystem>
 #include <fstream> // IWYU pragma: keep
 #include <iostream>
 #include <memory>
+#include <set>
+#include <system_error>
+#include <vector>
+
+namespace
+{
+// Preserve query identities through constant folding and later lowering. Only
+// newly introduced assertions need an ID; removed queries reserve theirs too.
+void label_btor2_properties(
+  goto_modelt &model,
+  const std::vector<source_locationt> &removed = {})
+{
+  std::set<irep_idt> used;
+  for(const auto &source : removed)
+    if(!source.get_property_id().empty())
+      used.insert(source.get_property_id());
+  for(const auto &function : model.goto_functions.function_map)
+    for(const auto &instruction : function.second.body.instructions)
+      if(instruction.is_assert() &&
+         !instruction.source_location().get_property_id().empty())
+        used.insert(instruction.source_location().get_property_id());
+
+  std::map<std::string, std::size_t> counters;
+  for(auto &function : model.goto_functions.function_map)
+    for(auto &instruction : function.second.body.instructions)
+    {
+      if(!instruction.is_assert() ||
+         !instruction.source_location().get_property_id().empty())
+        continue;
+      auto &source = instruction.source_location_nonconst();
+      if(source.get_function().empty())
+        source.set_function(function.first);
+      std::string prefix = id2string(source.get_function());
+      if(!source.get_property_class().empty())
+      {
+        if(!prefix.empty())
+          prefix += ".";
+        auto infix = id2string(source.get_property_class());
+        std::replace(infix.begin(), infix.end(), ' ', '_');
+        prefix += infix;
+      }
+      if(!prefix.empty())
+        prefix += ".";
+      irep_idt id;
+      do
+        id = prefix + std::to_string(++counters[prefix]);
+      while(used.count(id));
+      source.set_property_id(id);
+      used.insert(id);
+    }
+}
+}
 
 cbmc_parse_optionst::cbmc_parse_optionst(int argc, const char **argv)
   : parse_options_baset(
@@ -160,7 +213,18 @@ void cbmc_parse_optionst::get_command_line_options(optionst &options)
   // Enable flags that in combination provide analysis with no surprises
   // (expected checks and no unsoundness by missing checks).
   cbmc_parse_optionst::set_default_analysis_flags(
-    options, !cmdline.isset("no-standard-checks"));
+    options,
+    !cmdline.isset("no-standard-checks") &&
+      (!cmdline.isset("goto-btor2") || cmdline.isset("goto-btor2-checks")));
+
+  if(cmdline.isset("goto-btor2"))
+  {
+    // Property instrumentation must not change allocation data semantics.
+    // BTOR2 allocations never fail; there is no CLI override.
+    config.ansi_c.malloc_may_fail = false;
+    config.ansi_c.malloc_failure_mode =
+      configt::ansi_ct::malloc_failure_modet::malloc_failure_mode_none;
+  }
 
   if(config.set(cmdline))
   {
@@ -425,6 +489,19 @@ void cbmc_parse_optionst::get_command_line_options(optionst &options)
 
   if(cmdline.isset("refine-strings"))
   {
+    // The refined-string solver is a SAT (bit-vector refinement) procedure and
+    // cannot run on an SMT2 back-end. The SMT2 back-end instead lowers string
+    // operations to the SMT-LIB theory of strings directly. Reject the
+    // contradictory combination rather than silently ignoring one of them.
+    if(cmdline.isset("smt2") || cmdline.isset("incremental-smt2-solver"))
+    {
+      log.error() << "--refine-strings is not supported with an SMT2 back-end; "
+                     "the SMT2 back-end handles strings via the SMT-LIB theory "
+                     "of strings"
+                  << messaget::eom;
+      exit(CPROVER_EXIT_USAGE_ERROR);
+    }
+
     options.set_option("refine-strings", true);
     options.set_option("string-printable", cmdline.isset("string-printable"));
   }
@@ -493,18 +570,18 @@ void cbmc_parse_optionst::get_command_line_options(optionst &options)
   options.set_option("rewrite-rw-ok", true);
   options.set_option("rewrite-union", true);
   options.set_option("goto-btor2", cmdline.isset("goto-btor2"));
-  if(cmdline.isset("goto-btor2"))
-    options.set_option(
-      "goto-btor2-error-function",
-      cmdline.get_value("goto-btor2-error-function"));
+  options.set_option("goto-btor2-checks", cmdline.isset("goto-btor2-checks"));
+  options.set_option(
+    "c2btor-witness-source-tokens",
+    cmdline.isset("goto-btor2") && cmdline.isset("goto-btor2-map-out"));
 
   if(cmdline.isset("goto-btor2"))
   {
+    if(!cmdline.isset("goto-btor2-checks"))
+      options.set_option("built-in-assertions", false);
     options.set_option(
-      "goto-btor2-no-heap-guards", cmdline.isset("goto-btor2-no-heap-guards"));
-    options.set_option(
-      "goto-btor2-merge-properties",
-      cmdline.isset("goto-btor2-merge-properties"));
+      "goto-btor2-slice-property",
+      !cmdline.isset("goto-btor2-no-slice-property"));
   }
 
   if(cmdline.isset("smt1"))
@@ -525,9 +602,111 @@ int cbmc_parse_optionst::doit()
     return CPROVER_EXIT_SUCCESS;
   }
 
+  if(cmdline.isset("goto-btor2"))
+  {
+    const char *const exclusive_options[][2] = {
+      {"32", "64"},
+      {"inline", "no-inline"},
+      {"goto-btor2-lbe", "goto-btor2-no-lbe"},
+      {"goto-btor2-scalar-blocks", "goto-btor2-no-scalar-blocks"},
+      {"goto-btor2-slice-property", "goto-btor2-no-slice-property"},
+      {"goto-btor2-merge-bads", "goto-btor2-no-merge-bads"},
+      {"goto-btor2-optimize-state", "goto-btor2-no-optimize-state"}};
+    for(const auto &pair : exclusive_options)
+    {
+      if(cmdline.isset(pair[0]) && cmdline.isset(pair[1]))
+      {
+        log.error() << "--" << pair[0] << " conflicts with --" << pair[1]
+                    << messaget::eom;
+        return CPROVER_EXIT_USAGE_ERROR;
+      }
+    }
+    for(const char *option : {
+          "array", "memory", "array-mixed-threshold-bits",
+          "memory-object-max-bytes", "goto-btor2-out", "goto-btor2-map-out"})
+    {
+      const auto &values = cmdline.get_values(option);
+      if(values.size() > 1 &&
+         std::any_of(values.begin(), values.end(), [&](const std::string &value) {
+           return value != values.front();
+         }))
+      {
+        log.error() << "--" << option << " has conflicting repeated values"
+                    << messaget::eom;
+        return CPROVER_EXIT_USAGE_ERROR;
+      }
+    }
+    // Validate aliases before opening either stream, which would truncate it.
+    if(cmdline.isset("goto-btor2-out") && cmdline.isset("goto-btor2-map-out"))
+    {
+      std::error_code model_error, map_error, equivalent_error;
+      const auto model_path = std::filesystem::weakly_canonical(
+        cmdline.get_value("goto-btor2-out"), model_error);
+      const auto map_path = std::filesystem::weakly_canonical(
+        cmdline.get_value("goto-btor2-map-out"), map_error);
+      if((!model_error && !map_error && model_path == map_path) ||
+         std::filesystem::equivalent(model_path, map_path, equivalent_error))
+      {
+        log.error() << "BTOR2 model and source map need distinct paths"
+                    << messaget::eom;
+        return CPROVER_EXIT_USAGE_ERROR;
+      }
+    }
+    if(cmdline.isset("property") || cmdline.isset("claim"))
+    {
+      log.error() << "--property/--claim are not supported with --goto-btor2; "
+                     "all source ASSERTs are translated (optionally merge bads)"
+                  << messaget::eom;
+      return CPROVER_EXIT_USAGE_ERROR;
+    }
+    // These shared parser options belong to BMC, not transition-system
+    // conversion. Reject them before preprocessing or opening output files.
+    for(const char *option : {
+          "unwind",
+          "unwindset",
+          "unwind-min",
+          "unwind-max",
+          "unwinding-assertions",
+          "no-unwinding-assertions",
+          "partial-loops",
+          "incremental-loop",
+          "ignore-properties-before-unwind-min"})
+    {
+      if(cmdline.isset(option))
+      {
+        log.error() << "--" << option
+                    << " is a BMC option and is not supported with --goto-btor2; "
+                       "BTOR2 represents loops using PC transitions"
+                    << messaget::eom;
+        return CPROVER_EXIT_USAGE_ERROR;
+      }
+    }
+  }
+
   if(
-    (cmdline.isset("array") || cmdline.isset("array-bv-max-object-bytes") ||
-     cmdline.isset("memory") || cmdline.isset("memory-object-max-bytes")) &&
+    (cmdline.isset("goto-btor2-out") || cmdline.isset("goto-btor2-map-out") ||
+     cmdline.isset("array") || cmdline.isset("array-mixed-threshold-bits") ||
+     cmdline.isset("memory") || cmdline.isset("memory-object-max-bytes") ||
+     cmdline.isset("goto-btor2-lbe") ||
+     cmdline.isset("goto-btor2-no-lbe") ||
+     cmdline.isset("goto-btor2-slice-property") ||
+     cmdline.isset("goto-btor2-no-slice-property") ||
+     cmdline.isset("goto-btor2-initialization") ||
+     cmdline.isset("goto-btor2-scalar-slice") ||
+     cmdline.isset("goto-btor2-optimize-state") ||
+     cmdline.isset("goto-btor2-no-optimize-state") ||
+     cmdline.isset("goto-btor2-logical-arrays") ||
+     cmdline.isset("goto-btor2-scalar-blocks") ||
+     cmdline.isset("goto-btor2-no-scalar-blocks") ||
+     cmdline.isset("goto-btor2-array-blocks") ||
+     cmdline.isset("goto-btor2-array-loop-summary") ||
+     cmdline.isset("goto-btor2-scalar-loop-summary") ||
+     cmdline.isset("goto-btor2-no-array-optimizations") ||
+     cmdline.isset("goto-btor2-symbolic-heap") ||
+     cmdline.isset("goto-btor2-symbolic-heap-arrays") ||
+     cmdline.isset("goto-btor2-symbolic-heap-wide-offsets") ||
+     cmdline.isset("goto-btor2-symbolic-heap-bv-array-fallback") ||
+     cmdline.isset("goto-btor2-symbolic-heap-compact")) &&
     !cmdline.isset("goto-btor2"))
   {
     log.error()
@@ -546,35 +725,146 @@ int cbmc_parse_optionst::doit()
   array_encoding.object_memory = memory_mode == "object";
   const auto array_mode =
     cmdline.isset("array") ? cmdline.get_value("array") : "bv";
-  if(array_mode != "bv" && array_mode != "array")
+  if(array_mode != "bv" && array_mode != "array" && array_mode != "mixed")
   {
-    log.error() << "--array requires bv or array" << messaget::eom;
+    log.error() << "--array requires bv, array or mixed" << messaget::eom;
     return CPROVER_EXIT_USAGE_ERROR;
   }
   array_encoding.bitvectors = array_mode == "bv";
-  if(cmdline.isset("array-bv-max-object-bytes"))
+  array_encoding.mixed = array_mode == "mixed";
+
+  // Native-Array storage is the user-visible request; the certified array
+  // pipeline is part of that representation, not a separate tuning decision.
+  // BV uses representation-independent state pruning, without native-Array
+  // summaries or symbolic-heap storage transformations.
+  const bool array_sort_defaults =
+    (array_mode == "array" || array_mode == "mixed") &&
+    !cmdline.isset("goto-btor2-no-array-optimizations");
+  const bool lbe = !cmdline.isset("goto-btor2-no-lbe");
+  const bool optimize_state =
+    !cmdline.isset("goto-btor2-no-optimize-state") &&
+    (cmdline.isset("goto-btor2-optimize-state") || array_sort_defaults ||
+     array_encoding.bitvectors);
+  const bool logical_arrays =
+    cmdline.isset("goto-btor2-logical-arrays") || array_sort_defaults;
+  const bool scalar_blocks =
+    !cmdline.isset("goto-btor2-no-scalar-blocks") &&
+    (lbe || cmdline.isset("goto-btor2-scalar-blocks"));
+  const bool array_blocks =
+    cmdline.isset("goto-btor2-array-blocks") ||
+    (array_sort_defaults && logical_arrays && scalar_blocks);
+  const bool array_loop_summary =
+    cmdline.isset("goto-btor2-array-loop-summary") ||
+    (array_sort_defaults && logical_arrays &&
+     array_encoding.object_memory);
+  const bool scalar_loop_summary =
+    cmdline.isset("goto-btor2-scalar-loop-summary") ||
+    array_sort_defaults;
+  array_encoding.symbolic_heap =
+    cmdline.isset("goto-btor2-symbolic-heap") ||
+    (array_sort_defaults && array_encoding.object_memory);
+  array_encoding.symbolic_heap_arrays =
+    cmdline.isset("goto-btor2-symbolic-heap-arrays") ||
+    (array_sort_defaults && array_encoding.symbolic_heap &&
+     array_encoding.object_memory);
+  array_encoding.symbolic_heap_wide_offsets =
+    cmdline.isset("goto-btor2-symbolic-heap-wide-offsets") ||
+    (array_sort_defaults && array_encoding.symbolic_heap_arrays);
+  array_encoding.symbolic_heap_bv_array_fallback =
+    cmdline.isset("goto-btor2-symbolic-heap-bv-array-fallback");
+  array_encoding.symbolic_heap_compact =
+    cmdline.isset("goto-btor2-symbolic-heap-compact") ||
+    (array_sort_defaults && array_encoding.symbolic_heap_arrays);
+
+  if(scalar_blocks && !lbe)
   {
-    const auto value = cmdline.get_value("array-bv-max-object-bytes");
+    log.error() << "--goto-btor2-scalar-blocks requires LBE" << messaget::eom;
+    return CPROVER_EXIT_USAGE_ERROR;
+  }
+  if(array_blocks && (!logical_arrays || !scalar_blocks))
+  {
+    log.error() << "--goto-btor2-array-blocks requires "
+                   "--goto-btor2-logical-arrays and --goto-btor2-scalar-blocks"
+                << messaget::eom;
+    return CPROVER_EXIT_USAGE_ERROR;
+  }
+  if((array_encoding.symbolic_heap_wide_offsets ||
+      array_encoding.symbolic_heap_bv_array_fallback ||
+      array_encoding.symbolic_heap_compact) &&
+     !array_encoding.symbolic_heap_arrays)
+  {
+    log.error() << "symbolic heap wide offsets and BV Array fallback require "
+                   "--goto-btor2-symbolic-heap-arrays"
+                << messaget::eom;
+    return CPROVER_EXIT_USAGE_ERROR;
+  }
+  if(array_encoding.symbolic_heap_arrays &&
+     (!array_encoding.symbolic_heap || !array_encoding.object_memory))
+  {
+    log.error() << "--goto-btor2-symbolic-heap-arrays requires "
+                   "--goto-btor2-symbolic-heap and --memory object"
+                << messaget::eom;
+    return CPROVER_EXIT_USAGE_ERROR;
+  }
+  if(array_loop_summary &&
+     (!logical_arrays || !array_encoding.object_memory ||
+      array_encoding.bitvectors))
+  {
+    log.error() << "--goto-btor2-array-loop-summary requires "
+                   "--goto-btor2-logical-arrays, --memory object and "
+                   "--array array|mixed"
+                << messaget::eom;
+    return CPROVER_EXIT_USAGE_ERROR;
+  }
+  if(array_encoding.mixed && !array_encoding.object_memory)
+  {
+    log.error() << "--array mixed requires --memory object" << messaget::eom;
+    return CPROVER_EXIT_USAGE_ERROR;
+  }
+  if(cmdline.isset("array-mixed-threshold-bits"))
+  {
+    const auto value = cmdline.get_value("array-mixed-threshold-bits");
     try
     {
       std::size_t end = 0;
       const auto parsed = std::stoull(value, &end);
       if(
-        !array_encoding.bitvectors || value.empty() || value[0] == '-' ||
+        !array_encoding.mixed || value.empty() ||
+        !std::all_of(value.begin(), value.end(), [](char digit) {
+          return digit >= '0' && digit <= '9';
+        }) ||
         end != value.size() || parsed == 0 ||
         parsed > std::numeric_limits<std::size_t>::max())
-        throw std::invalid_argument("BV object capacity");
-      array_encoding.max_object_bytes = static_cast<std::size_t>(parsed);
+        throw std::invalid_argument("mixed array threshold");
+      array_encoding.mixed_threshold_bits = static_cast<std::size_t>(parsed);
     }
     catch(const std::exception &)
     {
-      log.error() << "--array-bv-max-object-bytes requires --array bv and "
+      log.error() << "--array-mixed-threshold-bits requires --array mixed and "
                      "a positive integer"
                   << messaget::eom;
       return CPROVER_EXIT_USAGE_ERROR;
     }
   }
-
+  // Retain both historical spellings as validated no-op compatibility options.
+  const auto initialization = cmdline.isset("goto-btor2-initialization")
+                                ? cmdline.get_value("goto-btor2-initialization")
+                                : "strict";
+  if(initialization != "strict" && initialization != "nondet")
+  {
+    log.error() << "--goto-btor2-initialization requires strict or nondet"
+                << messaget::eom;
+    return CPROVER_EXIT_USAGE_ERROR;
+  }
+  const auto scalar_slice = cmdline.isset("goto-btor2-scalar-slice")
+                              ? cmdline.get_value("goto-btor2-scalar-slice")
+                              : "none";
+  if(scalar_slice != "none" && scalar_slice != "dead" && scalar_slice != "liveness")
+  {
+    log.error() << "--goto-btor2-scalar-slice requires none, dead or liveness"
+                << messaget::eom;
+    return CPROVER_EXIT_USAGE_ERROR;
+  }
   if(cmdline.isset("memory-object-max-bytes"))
   {
     const auto value = cmdline.get_value("memory-object-max-bytes");
@@ -583,18 +873,13 @@ int cbmc_parse_optionst::doit()
       std::size_t end = 0;
       const auto parsed = std::stoull(value, &end);
       if(
-        !array_encoding.object_memory || value.empty() || value[0] == '-' ||
-        end != value.size() || parsed == 0 ||
-        parsed > std::numeric_limits<std::size_t>::max() ||
-        (cmdline.isset("array-bv-max-object-bytes") &&
-         parsed != *array_encoding.max_object_bytes))
+        value.empty() || value[0] == '-' || end != value.size() || parsed == 0)
         throw std::invalid_argument("object capacity");
       array_encoding.max_object_bytes = static_cast<std::size_t>(parsed);
     }
     catch(const std::exception &)
     {
-      log.error() << "--memory-object-max-bytes requires --memory object and "
-                     "a positive integer; capacity options must agree"
+      log.error() << "--memory-object-max-bytes requires a positive integer"
                   << messaget::eom;
       return CPROVER_EXIT_USAGE_ERROR;
     }
@@ -610,10 +895,11 @@ int cbmc_parse_optionst::doit()
   messaget::eval_verbosity(
     cmdline.get_value("verbosity"), messaget::M_STATUS, ui_message_handler);
 
-  log.status() << "C2BTOR version " << C2BTOR_VERSION
-               << " (CBMC frontend " << CBMC_VERSION << ") "
+  log.status() << "C2BTOR version " << C2BTOR_VERSION << " "
                << config.this_architecture() << " "
                << config.this_operating_system() << messaget::eom;
+  log.status() << "Using CBMC's C parser and GOTO-IR, version "
+               << CBMC_VERSION << messaget::eom;
 
   //
   // Unwinding of transition systems is done by hw-cbmc.
@@ -722,42 +1008,18 @@ int cbmc_parse_optionst::doit()
   if(get_goto_program_ret!=-1)
     return get_goto_program_ret;
 
-  if(cmdline.isset("btor2-demo"))
-  {
-    std::ofstream out_file;
-    std::ostream *out = &std::cout;
-    if(cmdline.isset("btor2-out"))
-    {
-      out_file.open(cmdline.get_value("btor2-out"));
-      if(!out_file)
-      {
-        log.error() << "failed to open --btor2-out file" << messaget::eom;
-        return CPROVER_EXIT_INCORRECT_TASK;
-      }
-      out = &out_file;
-    }
-
-    if(write_btor2_demo(goto_model, *out, log))
-      return CPROVER_EXIT_INTERNAL_ERROR;
-    return CPROVER_EXIT_SUCCESS;
-  }
-
   // Full goto-program to BTOR2 conversion
   if(cmdline.isset("goto-btor2"))
   {
     btor2_property_optionst properties;
-    properties.error_function = cmdline.get_value("goto-btor2-error-function");
-    properties.reach_only = cmdline.isset("goto-btor2-reach-only");
-    properties.merge = cmdline.isset("goto-btor2-merge-bads") ||
-                       cmdline.isset("goto-btor2-merge-properties");
-    properties.no_heap_guards = cmdline.isset("goto-btor2-no-heap-guards");
-    if(properties.reach_only && properties.error_function.empty())
-    {
-      log.error() << "--goto-btor2-reach-only requires "
-                    "--goto-btor2-error-function NAME" << messaget::eom;
-      return CPROVER_EXIT_USAGE_ERROR;
-    }
+    properties.merge = !cmdline.isset("goto-btor2-no-merge-bads");
     auto main = goto_model.goto_functions.function_map.find(ID_main);
+    if(cmdline.isset("goto-btor2-map-out") &&
+       main != goto_model.goto_functions.function_map.end())
+      btor2_capture_source_events(
+        main->second.body, namespacet(goto_model.symbol_table),
+        properties.source_provenance,
+        "post-frontend-lowering-and-inlining; before callback simplification, property slicing and converter optimization");
     if(
       main != goto_model.goto_functions.function_map.end() &&
       !cmdline.isset("nondet-static"))
@@ -765,10 +1027,129 @@ int cbmc_parse_optionst::doit()
         main->second.body, goto_model.symbol_table, log,
         &properties.unreachable_assertions);
     if(main != goto_model.goto_functions.function_map.end())
+      btor2_record_source_transform(
+        main->second.body, properties.source_provenance,
+        "callback-target-and-constant-simplification");
+    if(!cmdline.isset("goto-btor2-no-slice-property"))
+    {
+      // Keep the control-flow skeleton when slicing the inlined program.
+      // Ordinary post-dominance does not preserve property reachability in
+      // loops: dropping an exit guard while retaining its back edge can turn
+      // a terminating loop into an unconditional self-loop. Anchoring every
+      // GOTO and ASSUME also retains their transitive data dependencies.
+      // Calls and OTHER instructions may affect heap state or termination;
+      // preserve these effects even when the generic dependence analysis
+      // does not model the converter-specific operations.
+      class btor2_property_criteriont : public slicing_criteriont
+      {
+      public:
+        explicit btor2_property_criteriont(const goto_functionst &functions)
+        {
+          const auto needs_complete_dependencies = [](const exprt &expr) {
+            return expr.id() == ID_dereference ||
+                   (expr.id() == ID_side_effect &&
+                    expr.get(ID_statement) != ID_nondet) ||
+                   (expr.id() == ID_index &&
+                    to_index_expr(expr).array().type().id() == ID_pointer);
+          };
+          for(const auto &function : functions.function_map)
+          {
+            for(const auto &instruction : function.second.body.instructions)
+            {
+              const auto collect_addressed = [&](const exprt &expr) {
+                if(expr.id() == ID_address_of)
+                  find_symbols(to_address_of_expr(expr).object(), memory_lifetimes);
+                return false;
+              };
+              has_subexpr(instruction.code(), collect_addressed);
+              if(instruction.has_condition())
+                has_subexpr(instruction.condition(), collect_addressed);
+              // The generic read/write analysis may omit unresolved pointer
+              // accesses and converter-specific heap events, including their
+              // parameter dependencies. Keep the whole containing function
+              // instead of treating an incomplete dependency set as empty.
+              if(
+                instruction.is_other() ||
+                has_subexpr(instruction.code(), needs_complete_dependencies) ||
+                (instruction.has_condition() &&
+                 has_subexpr(
+                   instruction.condition(), needs_complete_dependencies)))
+              {
+                preserve_functions.insert(function.first);
+                break;
+              }
+            }
+          }
+        }
+        bool operator()(
+          const irep_idt &function,
+          goto_programt::const_targett target) const override
+        {
+          const auto memory_lifetime = [&](const symbol_exprt &symbol) {
+            const auto &type = symbol.type().id();
+            return memory_lifetimes.count(symbol.get_identifier()) != 0 ||
+              type == ID_array || type == ID_struct || type == ID_struct_tag ||
+              type == ID_union || type == ID_union_tag;
+          };
+          return preserve_functions.count(function) != 0 ||
+                 (target->is_decl() && memory_lifetime(target->decl_symbol())) ||
+                 (target->is_dead() && memory_lifetime(target->dead_symbol())) ||
+                 target->is_assert() || target->is_goto() || target->is_assume() ||
+                 target->source_location().get_bool("c2btor_witness_value_root") ||
+                 target->is_function_call() || target->is_other();
+        }
+
+      private:
+        std::set<irep_idt> preserve_functions;
+        find_symbols_sett memory_lifetimes;
+      };
+      const btor2_property_criteriont criterion(goto_model.goto_functions);
+      log.status() << "Property-slicing GOTO program before BTOR2 conversion"
+                   << messaget::eom;
+      // Function-local simplification renumbers main from zero. The
+      // interprocedural dependence analysis requires globally unique locations.
+      goto_model.goto_functions.update();
+      full_slicer(
+        goto_model.goto_functions,
+        namespacet(goto_model.symbol_table),
+        criterion,
+        log.get_message_handler());
+      goto_model.goto_functions.update();
+    }
+    if(main != goto_model.goto_functions.function_map.end())
+    {
+      btor2_record_source_transform(
+        main->second.body, properties.source_provenance, "property-slicing");
+      if(properties.source_provenance.enabled)
+      {
+        auto record = properties.source_provenance.transformations.end();
+        --record;
+        to_json_object(*record)["enabled"] = jsont::json_boolean(
+          !cmdline.isset("goto-btor2-no-slice-property"));
+      }
+    }
+    if(main != goto_model.goto_functions.function_map.end())
       lower_array_operations(
         main->second.body, goto_model.symbol_table, log,
         array_encoding.object_memory && array_encoding.bitvectors &&
+        !array_encoding.symbolic_heap_bv_array_fallback &&
         config.ansi_c.endianness == configt::ansi_ct::endiannesst::IS_LITTLE_ENDIAN);
+    if(main != goto_model.goto_functions.function_map.end())
+      btor2_record_source_transform(
+        main->second.body, properties.source_provenance, "array-operation-lowering");
+    if(
+      main != goto_model.goto_functions.function_map.end() &&
+      properties.unreachable_assertions.empty() &&
+      std::none_of(
+        main->second.body.instructions.begin(),
+        main->second.body.instructions.end(),
+        [](const goto_programt::instructiont &instruction)
+        { return instruction.is_assert(); }))
+    {
+      log.error() << "No selected source property; no model emitted"
+                  << messaget::eom;
+      return CPROVER_EXIT_INCORRECT_TASK;
+    }
     std::ofstream out_file;
     std::ostream *out = &std::cout;
     if(cmdline.isset("goto-btor2-out"))
@@ -782,73 +1163,14 @@ int cbmc_parse_optionst::doit()
       out = &out_file;
     }
 
-    if(cmdline.isset("goto-btor2-checks"))
-    {
-      // Apply goto-check instrumentation (bounds-check, div-by-zero, etc.) before
-      // converting to BTOR2 so that these checks become BTOR2 "bad" properties.
-      //
-      // Note: the BTOR2 converter does not support all C features (e.g. complex
-      // pointer/heap modelling). Users should enable only checks they intend to
-      // model in BTOR2.
-      goto_check_c(options, goto_model, ui_message_handler);
-    }
-
-    // Give each assertion a stable property id before lowering it to a BTOR2
-    // `bad` property. This keeps multiple bad states distinguishable even when
-    // they originate from goto-check instrumentation.
-    label_properties(goto_model);
-
-    // When --unwind (or --unwindset) is given together with --goto-btor2,
-    // apply goto-level loop unwinding BEFORE btor2 conversion. Each copied
-    // allocation receives its own identity. Preserve unwinding assertions:
-    // silently cutting a loop can produce both missing and spurious paths.
-    // An unwind failure means the bound is insufficient, not a C violation.
-    if(
-      cmdline.isset("unwind") || cmdline.isset("unwindset") ||
-      cmdline.isset("unwindset-file"))
-    {
-      unwindsett unwindset;
-      if(cmdline.isset("unwind"))
-        unwindset.parse_unwind(cmdline.get_value("unwind"));
-      if(cmdline.isset("unwindset"))
-        unwindset.parse_unwindset(
-          cmdline.get_comma_separated_values("unwindset"),
-          goto_model,
-          ui_message_handler);
-      if(cmdline.isset("unwindset-file"))
-        unwindset.parse_unwindset_file(
-          cmdline.get_value("unwindset-file"),
-          goto_model,
-          ui_message_handler);
-      goto_unwindt goto_unwind;
-      goto_unwind(
-        goto_model,
-        unwindset,
-        goto_unwindt::unwind_strategyt::ASSERT_ASSUME);
-      goto_model.goto_functions.update();
-      log.status() << "Applied goto-level loop unwinding before BTOR2 conversion"
-                   << messaget::eom;
-    }
-
-    if(cmdline.isset("goto-btor2-unroll"))
-    {
-      // Expand only counted allocation loops with a checked finite bound.
-      // Remaining repeated allocation sites are rejected by the converter.
-      unroll_malloc_counted_loops(goto_model, log);
-    }
-
-    label_properties(goto_model); // include newly introduced unwind properties
+    // Generic checks were instrumented once in process_goto_program, only
+    // when --goto-btor2-checks was requested. Preserve the IDs already assigned
+    // there; any assertions introduced by later lowering get unused IDs.
+    label_btor2_properties(goto_model, properties.unreachable_assertions);
 
     std::ofstream source_map;
     if(cmdline.isset("goto-btor2-map-out"))
     {
-      if(cmdline.get_value("goto-btor2-map-out") ==
-         cmdline.get_value("goto-btor2-out"))
-      {
-        log.error() << "BTOR2 model and source map need distinct paths"
-                    << messaget::eom;
-        return CPROVER_EXIT_INCORRECT_TASK;
-      }
       source_map.open(cmdline.get_value("goto-btor2-map-out"));
       if(!source_map)
       {
@@ -857,7 +1179,7 @@ int cbmc_parse_optionst::doit()
         return CPROVER_EXIT_INCORRECT_TASK;
       }
     }
-    unsigned heap_objects = 32;
+    unsigned heap_objects = 0;
     if(cmdline.isset("goto-btor2-heap-objects"))
     {
       const auto value = cmdline.get_value("goto-btor2-heap-objects");
@@ -878,6 +1200,10 @@ int cbmc_parse_optionst::doit()
       }
     }
     log.status() << "Memory encoding: " << memory_mode << messaget::eom;
+    if(array_encoding.mixed)
+      log.status() << "Mixed array threshold: "
+                   << array_encoding.mixed_threshold_bits << " bits"
+                   << messaget::eom;
     if(array_encoding.bitvectors || array_encoding.object_memory)
     {
       if(array_encoding.max_object_bytes)
@@ -897,9 +1223,39 @@ int cbmc_parse_optionst::doit()
         source_map.is_open() ? &source_map : nullptr,
         heap_objects,
         array_encoding,
-        properties))
+        properties,
+        !cmdline.isset("goto-btor2-no-lbe"),
+        scalar_slice == "liveness" ? scalar_projection_modet::LIVENESS
+          : scalar_slice == "dead" ? scalar_projection_modet::DEAD
+                                   : scalar_projection_modet::NONE,
+        btor2_optimization_optionst{
+          optimize_state,
+          logical_arrays,
+          scalar_blocks,
+          array_blocks,
+          array_loop_summary,
+          scalar_loop_summary}))
+    {
+      // The output streams are opened before conversion; a rejected conversion
+      // would leave empty model/map files whose existence could be mistaken
+      // for success. The exit code stays the source of truth.
+      out_file.close();
+      source_map.close();
+      for(const char *option :
+          {"goto-btor2-out", "goto-btor2-map-out"})
+      {
+        if(!cmdline.isset(option))
+          continue;
+        const auto path = cmdline.get_value(option);
+        std::error_code error;
+        if(
+          std::filesystem::exists(path, error) &&
+          std::filesystem::file_size(path, error) == 0)
+          std::filesystem::remove(path, error);
+      }
       return CPROVER_EXIT_INTERNAL_ERROR;
-     return CPROVER_EXIT_SUCCESS;
+    }
+    return CPROVER_EXIT_SUCCESS;
   }
 
   if(cmdline.isset("show-claims") || // will go away
@@ -1119,16 +1475,6 @@ int cbmc_parse_optionst::get_goto_program(
     return CPROVER_EXIT_SUCCESS;
   }
 
-  // show it?
-  if(
-    cmdline.isset("show-goto-functions") ||
-    cmdline.isset("list-goto-functions"))
-  {
-    show_goto_functions(
-      goto_model, ui_message_handler, cmdline.isset("list-goto-functions"));
-    return CPROVER_EXIT_SUCCESS;
-  }
-
   log.statistics() << config.object_bits_info() << messaget::eom;
 
   return -1; // no error, continue
@@ -1196,34 +1542,30 @@ bool cbmc_parse_optionst::process_goto_program(
   if(::process_goto_program(goto_model, options, log))
     return true;
 
-  const auto &error_function =
-    options.get_option("goto-btor2-error-function");
-  if(!error_function.empty())
+  if(options.get_bool_option("goto-btor2"))
   {
-    const auto *target = goto_model.symbol_table.lookup(error_function);
-    if(target == nullptr || target->type.id() != ID_code)
-    {
-      log.error() << "Unknown --goto-btor2-error-function: " << error_function
-                  << messaget::eom;
-      return true;
-    }
-    // An unreach-call property is violated at the call site, not at an
-    // assertion inside the callee. Preserve that location before inlining.
+    // Standard SV-COMP error events are assertions at their original call
+    // sites. Ordinary assert/__CPROVER_assert are already GOTO ASSERTs.
     for(auto &function : goto_model.goto_functions.function_map)
       for(auto &instruction : function.second.body.instructions)
-        if(instruction.is_function_call() &&
-           instruction.call_function().id() == ID_symbol &&
-           to_symbol_expr(instruction.call_function()).get_identifier() ==
-             error_function)
-        {
-          auto location = instruction.source_location();
-          location.set_property_class("unreach-call");
-          location.set_comment("unreachable call to " + error_function);
-          auto assertion =
-            goto_programt::make_assertion(false_exprt(), location);
-          assertion.labels = instruction.labels;
-          instruction = std::move(assertion);
-        }
+      {
+        irep_idt target;
+        if(instruction.is_assert())
+          target = instruction.source_location().get("builtin_function");
+        else if(instruction.is_function_call() &&
+                instruction.call_function().id() == ID_symbol)
+          target = to_symbol_expr(instruction.call_function()).get_identifier();
+        if(target != "reach_error" && target != "__VERIFIER_error")
+          continue;
+        auto location = instruction.source_location();
+        location.set_property_class("unreach-call");
+        location.set("builtin_function", target);
+        location.set("c2btor_error_function", target);
+        location.set_comment("unreachable call to " + id2string(target));
+        auto assertion = goto_programt::make_assertion(false_exprt(), location);
+        assertion.labels = instruction.labels;
+        instruction = std::move(assertion);
+      }
     goto_model.goto_functions.update();
   }
 
@@ -1254,13 +1596,6 @@ bool cbmc_parse_optionst::process_goto_program(
   // needs to be done before pointer analysis
   add_failed_symbols(goto_model.symbol_table);
 
-  if(options.get_bool_option("drop-unused-functions"))
-  {
-    // Entry point will have been set before and function pointers removed
-    log.status() << "Removing unused functions" << messaget::eom;
-    remove_unused_functions(goto_model, log.get_message_handler());
-  }
-
   // remove skips such that trivial GOTOs are deleted and not considered
   // for coverage annotation:
   remove_skip(goto_model);
@@ -1280,7 +1615,10 @@ bool cbmc_parse_optionst::process_goto_program(
   // before using the argument of the "property" option.
   // Do not re-label after using the property slicer because
   // this would cause the property identifiers to change.
-  label_properties(goto_model);
+  if(options.get_bool_option("goto-btor2"))
+    label_btor2_properties(goto_model);
+  else
+    label_properties(goto_model);
 
   // reachability slice?
   if(options.get_bool_option("reachability-slice-fb"))
@@ -1351,27 +1689,43 @@ void cbmc_parse_optionst::help()
     "Model output:\n"
     " {y--goto-btor2} \t enable C2BTOR conversion\n"
     " {y--goto-btor2-out} {ufile} \t write BTOR2 (default: stdout)\n"
-    " {y--goto-btor2-map-out} {ufile} \t write PC/GotoIR/source map and model metadata\n"
+    " {y--goto-btor2-map-out} {ufile} \t optional PC/GotoIR/source map (witness replay only; not written by default)\n"
     " {y--inline} \t inline ordinary function calls from main\n"
-    " {y--show-goto-functions} \t inspect the processed GotoIR\n"
+    " Loops are encoded by PC transitions; BMC unwinding options are not supported.\n"
     "\n"
     "Memory and encoding:\n"
     " {y--memory} {uobject|global} \t memory organization (default: object)\n"
-    " {y--array} {ubv|array} \t storage representation (default: bv)\n"
-    " {y--memory-object-max-bytes} {uN} \t explicit runtime capacity (default: automatic)\n"
-    " {y--array-bv-max-object-bytes} {uN} \t same capacity limit for BV storage\n"
-    " {y--goto-btor2-heap-objects} {uK} \t total successful allocations (default: 32)\n"
-    " {y--malloc-may-fail --malloc-fail-null} \t enable NULL allocation failures\n"
+    " {y--array} {ubv|array|mixed} \t storage representation (default: bv)\n"
+    " Selecting array or mixed enables the certified array pipeline below; bv uses state pruning only.\n"
+    " {y--goto-btor2-no-array-optimizations} \t keep array stages at their historical opt-in defaults (ablation)\n"
+    " {y--array-mixed-threshold-bits} {uN} \t mixed object threshold in bits (default: 2048; requires object memory)\n"
+    " {y--goto-btor2-initialization} {ustrict|nondet} \t compatibility option (no-op); stable arbitrary initial bytes\n"
+    " {y--goto-btor2-scalar-slice} {unone|dead|liveness} \t project unobservable scalar values and initializations (default: none)\n"
+    " {y--goto-btor2-optimize-state} \t optimize before capacity planning and prune unobservable model states (default: on)\n"
+    " {y--goto-btor2-no-optimize-state} \t disable state pruning for comparison\n"
+    " {y--goto-btor2-logical-arrays} \t separate certified element-only arrays from byte object memory (default: on for array|mixed)\n"
+    " {y--goto-btor2-scalar-blocks} \t merge scalar loop bodies and assertion-ending blocks; omit block-local scalar states (default: on; disable with --goto-btor2-no-scalar-blocks)\n"
+    " {y--goto-btor2-array-blocks} \t merge certified logical-array accesses using block-local storage versions (default: on for array|mixed; requires logical arrays and scalar blocks)\n"
+    " {y--goto-btor2-array-loop-summary} \t summarize certified complete constant/nondet fills and same-index copies; propagate uniform values and array equality (default: on for array|mixed with object memory)\n"
+    " {y--goto-btor2-scalar-loop-summary} \t summarize certified finite empty loops and integer constant reductions; preserve counter exits (default: on for array|mixed)\n"
+    " {y--goto-btor2-symbolic-heap} \t record typed allocation byte expressions and allocation-time size snapshots (default: on for array|mixed with object memory)\n"
+    " {y--goto-btor2-symbolic-heap-arrays} \t use fixed-domain object-local Arrays for symbolic allocation capacities (default: on for array|mixed with object memory)\n"
+    " {y--goto-btor2-symbolic-heap-wide-offsets} \t retain full machine-width offsets with hidden object tags; reject unsupported pointer serialization (default: on for array|mixed with object memory)\n"
+    " {y--goto-btor2-symbolic-heap-bv-array-fallback} \t explicitly allow native Arrays for dynamic objects unrepresentable in pure BV (default: off; requires symbolic heap Arrays)\n"
+    " {y--goto-btor2-symbolic-heap-compact} \t remove duplicate symbolic heap seeds; certify aligned uniform 64-bit cells or retain bytes (default: on for array|mixed with object memory)\n"
+    " {y--goto-btor2-lbe} \t merge acyclic scalar instructions and branches (default: on; disable with --goto-btor2-no-lbe)\n"
+    " {y--goto-btor2-slice-property} \t property-slice GotoIR (default: on; disable with --goto-btor2-no-slice-property; SAFE transfers, SAT needs replay)\n"
+    " {y--memory-object-max-bytes} {uN} \t explicit per-object byte limit (default: automatic; exceeding rejects)\n"
+    " {y--goto-btor2-heap-objects} {uK} \t storage limit; reject insufficient slots (default/0: infer)\n"
     "\n"
     "Properties and checks:\n"
-    " {y--goto-btor2-error-function} {uname} \t mark unreach-call before inlining\n"
-    " {y--goto-btor2-reach-only} \t select that error function's source properties\n"
-    " {y--goto-btor2-merge-bads} \t OR selected source bads (alias: --goto-btor2-merge-properties)\n"
-    " {y--goto-btor2-no-heap-guards} \t hide auxiliary bads; preserve proof obligations and halting\n"
-    " {y--goto-btor2-checks} \t instrument selected CBMC checks before conversion\n"
-    " {y--no-standard-checks} \t disable default CBMC instrumentation\n"
-    " {y--no-pointer-check --no-bounds-check --no-built-in-assertions} \t source-property workflow\n"
-    " {y--bounds-check --pointer-check --div-by-zero-check --signed-overflow-check} \t select checks\n"
+    " All GOTO assertions and standard SV-COMP error calls become properties.\n"
+    " {y--goto-btor2-merge-bads} \t OR selected source bads into one (default: on)\n"
+    " {y--goto-btor2-no-merge-bads} \t emit a separate bad for each selected source assertion\n"
+    " {y--goto-btor2-checks} \t explicitly instrument CBMC checks as source properties (once)\n"
+    " BTOR2 conversion instruments nothing by default; only source ASSERTs become bads.\n"
+    " {y--no-standard-checks --no-pointer-check --no-bounds-check --no-built-in-assertions} \t compatibility no-ops for BTOR2\n"
+    " {y--bounds-check --pointer-check --div-by-zero-check --signed-overflow-check} \t select checks with --goto-btor2-checks\n"
     "\n"
     "C frontend and target:\n"
     " {y-I} {upath} \t include directory\n"
@@ -1383,17 +1737,17 @@ void cbmc_parse_optionst::help()
     " {y--round-to-nearest --round-to-plus-inf --round-to-minus-inf --round-to-zero} \t initial rounding mode\n"
     " {y--verbosity} {uN} \t diagnostic level (default: 6)\n"
     "\n"
-    "Witness: scripts/c2btor_witness.py export / translate / validate.\n"
+    "Witness: c2btor-verify program.c --property unreach-call.prp --data-model ILP32.\n"
     "Use a hash-bound map and BtorSim replay before CPAchecker confirmation.\n"
-    "UNSAT requires all selected properties and model obligations; bounded absence,\n"
-    "TIMEOUT and UNKNOWN are not C SAFE results. See README.md for witness commands.\n"
+    "Only selected source properties generate bads. Unsupported representations fail conversion.\n"
+    "Bounded absence,\n"
+    "TIMEOUT and UNKNOWN are not C SAFE results. See README.md.\n"
     "\n"
-    "Based on CBMC: https://github.com/diffblue/cbmc\n"
-    "CBMC documentation: https://diffblue.github.io/cbmc/\n"
+    "Uses CBMC's C parser and GOTO-IR: https://github.com/diffblue/cbmc\n"
     "Thanks to Daniel Kroening, Edmund Clarke and the CBMC contributors.\n"
     "This product includes software developed by Daniel Kroening, Edmund Clarke,\n"
     "Computer Science Department, University of Oxford,\n"
-    "Computer Science Department, Carnegie Mellon University. See LICENSE.\n"
+    "Computer Science Department, Carnegie Mellon University. See LICENSES/.\n"
     "\n");
   // clang-format on
 }

@@ -24,6 +24,16 @@ bvt bv_utilst::build_constant(const mp_integer &n, std::size_t width)
   return result;
 }
 
+mp_integer bv_utilst::from_constant(const bvt &bv)
+{
+  PRECONDITION(is_constant(bv));
+  const std::size_t width = bv.size();
+  std::string s(width, '0');
+  for(std::size_t i = 0; i < width; i++)
+    s[width - i - 1] = bv[i].is_true() ? '1' : '0';
+  return binary2integer(s, false);
+}
+
 literalt bv_utilst::is_one(const bvt &bv)
 {
   PRECONDITION(!bv.empty());
@@ -1161,7 +1171,24 @@ void bv_utilst::unsigned_divider(
   bvt &res,
   bvt &rem)
 {
+  PRECONDITION(op0.size() == op1.size());
   std::size_t width=op0.size();
+
+  // If both operands are constant, compute the result directly so it folds to
+  // constant literals downstream instead of introducing fresh variables and a
+  // multiplier constraint.  Division by zero falls through to the general
+  // (non-deterministic) encoding below.
+  if(is_constant(op0) && is_constant(op1))
+  {
+    const mp_integer n1 = from_constant(op1);
+    if(n1 != 0)
+    {
+      const mp_integer n0 = from_constant(op0);
+      res = build_constant(n0 / n1, width);
+      rem = build_constant(n0 % n1, width);
+      return;
+    }
+  }
 
   // check if we divide by a power of two
   #if 0
@@ -1409,6 +1436,7 @@ literalt bv_utilst::lt_or_le(
   representationt rep)
 {
   PRECONDITION(bv0.size() == bv1.size());
+  PRECONDITION(!bv0.empty());
 
 #ifdef COMPACT_LT_OR_LE
   if(prop.has_set_to() && prop.cnf_handled_well())
@@ -1422,8 +1450,18 @@ literalt bv_utilst::lt_or_le(
       else if(top0.is_true() && top1.is_false())
         return const_literal(true);
 
+      // 1-bit signed: the sign bit is the only bit
+      if(bv0.size() == 1)
+      {
+        if(or_equal)
+          return prop.lor(top0, !top1);
+        else
+          return prop.land(top0, !top1);
+      }
+
       INVARIANT(
-        bv0.size() >= 2, "signed bitvectors should have at least two bits");
+        bv0.size() >= 2,
+        "the compact signed comparison encoding requires at least two bits");
       // 1 if a compare is needed below this bit
       bvt compareBelow = prop.new_variables(bv0.size() - 1);
       size_t start = compareBelow.size() - 1;

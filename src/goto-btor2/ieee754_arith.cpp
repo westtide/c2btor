@@ -1,5 +1,10 @@
-#include "ieee754_arith.h"
+// SPDX-License-Identifier: BSD-4-Clause
+// SPDX-FileCopyrightText: 2026 C2BTOR contributors
 
+#include "ieee754_arith.h"
+#include "btor2_float.h"
+
+#include <solvers/floatbv/float_utils.h>
 #include <util/arith_tools.h>
 
 #include <algorithm>
@@ -335,83 +340,27 @@ btor2_nid_t ieee754_aritht::round_significand(
 btor2_nid_t
 ieee754_aritht::add(btor2_nid_t a, btor2_nid_t b2, bool subtract) const
 {
-  const auto right = subtract ? neg(b2) : b2;
-  const auto na = normalize(a), nb = normalize(right);
-  const auto same_sign = eq_w(sign_bit(a), sign_bit(right), 1);
-  const std::size_t W = pow2_at_least(P + 4);
-  auto result = sum_significands(
-    sign_bit(a), na.exponent,
-    sll_w(uext_w(na.significand, P, W), konst(W, W - P), W),
-    sign_bit(right), nb.exponent,
-    sll_w(uext_w(nb.significand, P, W), konst(W, W - P), W), W);
-  result = ite(is_zero(right), a, result, width);
-  result = ite(is_zero(a), right, result, width);
-  result = ite(
-    land(is_zero(a), is_zero(right)),
-    zero_value(ite(same_sign, sign_bit(a), rounding_is(1), 1)),
-    result,
-    width);
-  result = ite(is_inf(right), right, result, width);
-  result = ite(is_inf(a), a, result, width);
-  result = ite(
-    land(land(is_inf(a), is_inf(right)), lnot(same_sign)),
-    nan_value(),
-    result,
-    width);
-  return ite(lor(is_nan(a), is_nan(right)), nan_value(), result, width);
+  null_message_handlert handler;
+  btor2_propt gates(b, handler);
+  btor2_float_utilst floats(b, gates, ieee_float_spect(P - 1, E), mode);
+  return gates.pack(floats.add_sub(
+    gates.unpack(a, width), gates.unpack(b2, width), subtract));
 }
 
 btor2_nid_t ieee754_aritht::mul(btor2_nid_t a, btor2_nid_t b2) const
 {
-  const auto na = normalize(a), nb = normalize(b2);
-  const auto sign = lxor_b(sign_bit(a), sign_bit(b2));
-  const auto prod = b.mul(
-    srt(2 * P),
-    uext_w(na.significand, P, 2 * P),
-    uext_w(nb.significand, P, 2 * P));
-  const auto top = slice(prod, 2 * P - 1, 2 * P - 1);
-  const auto aligned = ite(top, prod, sll_w(prod, one(2 * P), 2 * P), 2 * P);
-  const auto exponent = add_w(
-    sub_w(add_w(na.exponent, nb.exponent, EW), konst(EW, bias), EW),
-    uext_w(top, 1, EW),
-    EW);
-  auto result = round_pack(sign, exponent, aligned, 2 * P);
-  const auto any_zero = lor(is_zero(a), is_zero(b2));
-  const auto any_inf = lor(is_inf(a), is_inf(b2));
-  result = ite(any_zero, zero_value(sign), result, width);
-  result = ite(any_inf, inf_value(sign), result, width);
-  result = ite(land(any_inf, any_zero), nan_value(), result, width);
-  return ite(lor(is_nan(a), is_nan(b2)), nan_value(), result, width);
+  null_message_handlert handler;
+  btor2_propt gates(b, handler);
+  btor2_float_utilst floats(b, gates, ieee_float_spect(P - 1, E), mode);
+  return gates.pack(floats.mul(gates.unpack(a, width), gates.unpack(b2, width)));
 }
 
 btor2_nid_t ieee754_aritht::div(btor2_nid_t a, btor2_nid_t b2) const
 {
-  const auto na = normalize(a), nb = normalize(b2);
-  const auto sign = lxor_b(sign_bit(a), sign_bit(b2));
-  const std::size_t W = P + 4, DW = 2 * P + 4;
-  const auto num = sll_w(uext_w(na.significand, P, DW), konst(DW, P + 3), DW);
-  const auto den = uext_w(nb.significand, P, DW);
-  const auto quot = slice(b.udiv(srt(DW), num, den), W - 1, 0);
-  const auto rem = b.urem(srt(DW), num, den);
-  const auto hi = slice(quot, W - 1, W - 1);
-  // Keep several quotient bits below precision. Jam the remainder after
-  // normalization so a ratio below one retains its guard and sticky bits.
-  const auto aligned = ite(hi, quot, sll_w(quot, one(W), W), W);
-  const auto jammed =
-    b.lor(srt(W), aligned, uext_w(lnot(eq_w(rem, zero(DW), DW)), 1, W));
-  const auto exponent = sub_w(
-    add_w(sub_w(na.exponent, nb.exponent, EW), konst(EW, bias), EW),
-    uext_w(lnot(hi), 1, EW),
-    EW);
-  auto result = round_pack(sign, exponent, jammed, W);
-  result = ite(is_zero(a), zero_value(sign), result, width);
-  result = ite(is_inf(b2), zero_value(sign), result, width);
-  result = ite(is_zero(b2), inf_value(sign), result, width);
-  result = ite(is_inf(a), inf_value(sign), result, width);
-  const auto invalid =
-    lor(land(is_zero(a), is_zero(b2)), land(is_inf(a), is_inf(b2)));
-  result = ite(invalid, nan_value(), result, width);
-  return ite(lor(is_nan(a), is_nan(b2)), nan_value(), result, width);
+  null_message_handlert handler;
+  btor2_propt gates(b, handler);
+  btor2_float_utilst floats(b, gates, ieee_float_spect(P - 1, E), mode);
+  return gates.pack(floats.div(gates.unpack(a, width), gates.unpack(b2, width)));
 }
 
 btor2_nid_t ieee754_aritht::is_normal_node(btor2_nid_t v) const
@@ -487,94 +436,28 @@ btor2_nid_t ieee754_aritht::cast_int_to_float(
   std::size_t src_width,
   bool src_signed) const
 {
-  const auto sign =
-    src_signed ? slice(src, src_width - 1, src_width - 1) : zero(1);
-  const auto magnitude =
-    src_signed
-      ? ite(sign, sub_w(zero(src_width), src, src_width), src, src_width)
-      : src;
-  const std::size_t W = pow2_at_least(std::max(src_width, P + 3));
-  const auto wide = uext_w(magnitude, src_width, W);
-  const auto index = msb_index(wide, W);
-  const auto left = sub_w(konst(W, W - 1), uext_w(index, log2_of(W), W), W);
-  const auto exponent =
-    add_w(uext_w(index, log2_of(W), EW), konst(EW, bias), EW);
-  return ite(
-    eq_w(magnitude, zero(src_width), src_width),
-    zero_value(zero(1)),
-    round_pack(sign, exponent, sll_w(wide, left, W), W),
-    width);
+  null_message_handlert handler;
+  btor2_propt gates(b, handler);
+  btor2_float_utilst floats(b, gates, ieee_float_spect(P - 1, E), mode);
+  const auto input = gates.unpack(src, src_width);
+  return gates.pack(src_signed ? floats.from_signed_integer(input)
+                               : floats.from_unsigned_integer(input));
 }
 
 btor2_nid_t
-ieee754_aritht::cast_float_to_int(btor2_nid_t src, std::size_t dest_width) const
+ieee754_aritht::cast_float_to_int(
+  btor2_nid_t src, std::size_t dest_width, bool dest_signed) const
 {
-  const auto exponent = sub_w(
-    ite(
-      eq_w(exp_field(src), zero(E), E),
-      one(EW),
-      uext_w(exp_field(src), E, EW),
-      EW),
-    konst(EW, bias),
-    EW);
-  const auto left = b.sgte(b.get_bool_sort(), exponent, konst(EW, P - 1));
-  const auto distance = ite(
-    left,
-    sub_w(exponent, konst(EW, P - 1), EW),
-    sub_w(konst(EW, P - 1), exponent, EW),
-    EW);
-  const std::size_t W = pow2_at_least(std::max(P, dest_width) + 1);
-  const auto sig = uext_w(sig_with_hidden(src), P, W);
-  const auto magnitude = ite(
-    left,
-    sll_w(sig, uext_w(distance, EW, W), W),
-    srl_w(sig, uext_w(distance, EW, W), W),
-    W);
-  const auto truncated = slice(magnitude, dest_width - 1, 0);
-  const auto result = ite(
-    sign_bit(src),
-    sub_w(zero(dest_width), truncated, dest_width),
-    truncated,
-    dest_width);
-  return ite(
-    b.slt(b.get_bool_sort(), exponent, zero(EW)),
-    zero(dest_width),
-    result,
-    dest_width);
-}
-
-btor2_nid_t ieee754_aritht::float_to_int_valid(
-  btor2_nid_t src,
-  std::size_t dest_width,
-  bool dest_signed) const
-{
-  const auto exponent =
-    sub_w(uext_w(exp_field(src), E, EW), konst(EW, bias), EW);
-  const auto small = b.slt(b.get_bool_sort(), exponent, zero(EW));
-  const auto sign = sign_bit(src);
-  btor2_nid_t range;
-  if(dest_signed)
-  {
-    const auto bound = konst(EW, dest_width - 1);
-    // Negative values whose fractional part truncates to INT_MIN are valid;
-    // exponent alone would incorrectly exclude that narrow interval.
-    const auto at_min = land(
-      eq_w(exponent, bound, EW),
-      eq_w(
-        cast_float_to_int(src, dest_width),
-        konst(dest_width, power(2, dest_width - 1)),
-        dest_width));
-    range = lor(b.slt(b.get_bool_sort(), exponent, bound), land(sign, at_min));
-  }
-  else
-  {
-    range = ite(
-      sign,
-      small,
-      b.slt(b.get_bool_sort(), exponent, konst(EW, dest_width)),
-      1);
-  }
-  return land(lnot(lor(is_nan(src), is_inf(src))), range);
+  // Reuse the SAT backend's actual conversion, including its signedness
+  // handling. The adapter maps gates to BTOR2 expressions without SAT calls,
+  // fresh result bits, constraints, or auxiliary properties.
+  null_message_handlert handler;
+  btor2_propt gates(b, handler);
+  float_utilst floats(gates);
+  floats.spec = ieee_float_spect(P - 1, E);
+  floats.rounding_mode_bits.set(ieee_floatt::ROUND_TO_ZERO);
+  return gates.pack(
+    floats.to_integer(gates.unpack(src, width), dest_width, dest_signed));
 }
 
 btor2_nid_t ieee754_aritht::cast_float_to_float(
@@ -582,17 +465,17 @@ btor2_nid_t ieee754_aritht::cast_float_to_float(
   std::size_t src_width) const
 {
   ieee754_aritht source(b, src_width);
-  const auto normalized = source.normalize(src);
-  const auto exponent =
-    bias >= source.bias
-      ? add_w(normalized.exponent, konst(EW, bias - source.bias), EW)
-      : sub_w(normalized.exponent, konst(EW, source.bias - bias), EW);
-  const std::size_t W = pow2_at_least(std::max(source.P, P + 3));
-  const auto aligned = sll_w(
-    uext_w(normalized.significand, source.P, W), konst(W, W - source.P), W);
-  const auto sign = source.sign_bit(src);
-  auto result = round_pack(sign, exponent, aligned, W);
-  result = ite(source.is_zero(src), zero_value(sign), result, width);
-  result = ite(source.is_inf(src), inf_value(sign), result, width);
-  return ite(source.is_nan(src), nan_value(), result, width);
+  null_message_handlert handler;
+  btor2_propt gates(b, handler);
+  btor2_float_utilst floats(b, gates, ieee_float_spect(source.P - 1, source.E), mode);
+  return gates.pack(floats.conversion(gates.unpack(src, src_width),
+                                      ieee_float_spect(P - 1, E)));
+}
+
+btor2_nid_t ieee754_aritht::round_to_integral(btor2_nid_t src) const
+{
+  null_message_handlert handler;
+  btor2_propt gates(b, handler);
+  btor2_float_utilst floats(b, gates, ieee_float_spect(P - 1, E), mode);
+  return gates.pack(floats.round_to_integral(gates.unpack(src, width)));
 }

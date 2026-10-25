@@ -52,13 +52,28 @@ class optionst;
   OPT_JSON_INTERFACE \
   OPT_SOLVER \
   OPT_STRING_REFINEMENT_CBMC \
-  OPT_SHOW_GOTO_FUNCTIONS \
-  "(btor2-demo)(btor2-out):" \
-  "(goto-btor2)(goto-btor2-out):(goto-btor2-checks)(goto-btor2-warn-comments)(goto-btor2-unroll)" \
-  "(goto-btor2-heap-objects):(goto-btor2-map-out):(goto-btor2-error-function):" \
-  "(goto-btor2-no-heap-guards)(goto-btor2-merge-properties)" \
-  "(goto-btor2-reach-only)(goto-btor2-merge-bads)" \
-  "(array):(array-bv-max-object-bytes):(memory):(memory-object-max-bytes):" \
+  "(goto-btor2)(goto-btor2-out):(goto-btor2-checks)(goto-btor2-warn-comments)" \
+  "(goto-btor2-heap-objects):(goto-btor2-map-out):" \
+  "(goto-btor2-merge-bads)(goto-btor2-no-merge-bads)" \
+  "(goto-btor2-lbe)(goto-btor2-no-lbe)" \
+  "(goto-btor2-slice-property)(goto-btor2-no-slice-property)" \
+  "(goto-btor2-initialization):" \
+  "(goto-btor2-scalar-slice):" \
+  "(goto-btor2-optimize-state)(goto-btor2-no-optimize-state)" \
+  "(goto-btor2-logical-arrays)" \
+  "(goto-btor2-scalar-blocks)" \
+  "(goto-btor2-no-scalar-blocks)" \
+  "(goto-btor2-array-blocks)" \
+  "(goto-btor2-array-loop-summary)" \
+  "(goto-btor2-scalar-loop-summary)" \
+  "(goto-btor2-no-array-optimizations)" \
+  "(goto-btor2-symbolic-heap)" \
+  "(goto-btor2-symbolic-heap-arrays)" \
+  "(goto-btor2-symbolic-heap-wide-offsets)" \
+  "(goto-btor2-symbolic-heap-bv-array-fallback)" \
+  "(goto-btor2-symbolic-heap-compact)" \
+  "(array):(array-mixed-threshold-bits):" \
+  "(memory):(memory-object-max-bytes):" \
   OPT_SHOW_PROPERTIES \
   "(show-symbol-table)(show-parse-tree)" \
   "(drop-unused-functions)" \

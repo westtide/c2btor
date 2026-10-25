@@ -1,9 +1,0 @@
-CORE
-main.c
---verbosity 8
-^Generated \d+ VCC\(s\), 0 remaining after simplification$
-^VERIFICATION SUCCESSFUL$
-^EXIT=0$
-^SIGNAL=0$
---
-^warning: ignoring

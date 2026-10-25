@@ -986,32 +986,25 @@ void c_typecheck_baset::typecheck_compound_body(
           }
           else
           {
-            // GCC and Clang ignore anything other than an untagged struct or
-            // union; we could print a warning, but there isn't any ambiguity in
-            // semantics here. Printing a warning could elevate this to an error
-            // when compiling code with goto-cc with -Werror.
-            // Note that our type checking always creates a struct_tag/union_tag
-            // type, but only named struct/union types have an ID_tag member.
+            // C11 allows an *untagged* struct/union as an anonymous member.
+            // -fms-extensions (and MSVC) additionally allow a *tagged*
+            // struct/union as an anonymous member, injecting its members
+            // and contributing its size -- used throughout the Linux kernel
+            // (e.g. `struct __filename_head;` embedded in struct filename).
+            // Anything else -- a non-struct/union unnamed member (e.g. a bare
+            // `int;`), or a tagged struct/union without -fms-extensions -- is
+            // ignored (the GCC/Clang behaviour we preserve).
+            const typet &member_type = new_component.type();
             if(
-              new_component.type().id() == ID_struct_tag &&
-              follow_tag(to_struct_tag_type(new_component.type()))
+              member_type.id() != ID_struct_tag &&
+              member_type.id() != ID_union_tag)
+              continue; // not a struct/union: ignore
+            const bool is_untagged =
+              follow_tag(to_struct_or_union_tag_type(member_type))
                 .find(ID_tag)
-                .is_nil())
-            {
-              // ok, anonymous struct
-            }
-            else if(
-              new_component.type().id() == ID_union_tag &&
-              follow_tag(to_union_tag_type(new_component.type()))
-                .find(ID_tag)
-                .is_nil())
-            {
-              // ok, anonymous union
-            }
-            else
-            {
-              continue;
-            }
+                .is_nil();
+            if(!is_untagged && !config.ansi_c.allow_anonymous_struct_embedding)
+              continue; // tagged anonymous member needs -fms-extensions
           }
         }
 
@@ -1070,33 +1063,45 @@ void c_typecheck_baset::typecheck_compound_body(
     }
   }
 
-  // We allow an incomplete (C99) array as _last_ member!
-  // Zero-length is allowed everywhere.
-
-  if(type.id()==ID_struct ||
-     type.id()==ID_union)
+  // We allow an incomplete array as _last_ member of a struct,
+  // C11 6.7.2.1 §18. These are called "flexible array members".
+  // Zero-length (a gcc extension) is allowed everywhere.
+  // Flexible array members are not allowed in unions in ISO C, but we allow
+  // them as an extension on Windows.
+  if(type.id() == ID_struct || type.id() == ID_union)
   {
-    for(struct_union_typet::componentst::iterator
-        it=components.begin();
-        it!=components.end();
+    for(struct_union_typet::componentst::iterator it = components.begin();
+        it != components.end();
         it++)
     {
-      typet &c_type=it->type();
+      typet &component_type = it->type();
 
-      if(c_type.id()==ID_array &&
-         to_array_type(c_type).is_incomplete())
+      if(
+        component_type.id() != ID_array ||
+        !to_array_type(component_type).is_incomplete())
+      {
+        continue;
+      }
+
+      if(type.id() == ID_struct)
       {
         // needs to be last member
-        if(type.id()==ID_struct && it!=--components.end())
+        if(it != --components.end())
         {
           throw errort().with_location(it->source_location())
             << "flexible struct member must be last member";
         }
-
-        // make it zero-length
-        to_array_type(c_type).size() = from_integer(0, c_index_type());
-        c_type.set(ID_C_flexible_array_member, true);
       }
+      else if(config.ansi_c.os != configt::ansi_ct::ost::OS_WIN)
+      {
+        throw errort().with_location(it->source_location())
+          << "flexible array members in a union are a Microsoft "
+             "extension, and not permitted in ISO C";
+      }
+
+      // make it zero-length
+      to_array_type(component_type).size() = from_integer(0, c_index_type());
+      component_type.set(ID_C_flexible_array_member, true);
     }
   }
 

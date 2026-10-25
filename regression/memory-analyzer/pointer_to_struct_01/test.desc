@@ -1,7 +1,0 @@
-CORE
-main.gb
---breakpoint checkpoint --symbols p
-st = \{ .next=\&st \};
-p = \&st;
-^EXIT=0$
-^SIGNAL=0$

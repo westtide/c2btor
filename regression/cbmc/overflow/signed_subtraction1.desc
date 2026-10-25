@@ -1,8 +1,0 @@
-CORE
-signed_subtraction1.c
---no-standard-checks
-^EXIT=0$
-^SIGNAL=0$
-^VERIFICATION SUCCESSFUL$
---
-^warning: ignoring

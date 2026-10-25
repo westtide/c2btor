@@ -1,8 +1,0 @@
-CORE glpk
-posrr002.c
-POWER OPT
-^EXIT=10$
-^SIGNAL=0$
-^VERIFICATION FAILED$
---
-^warning: ignoring

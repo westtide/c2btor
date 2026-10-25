@@ -1,8 +1,0 @@
-CORE glpk
-bclwdww004.c
-TSO OPT
-^EXIT=0$
-^SIGNAL=0$
-^VERIFICATION SUCCESSFUL$
---
-^warning: ignoring

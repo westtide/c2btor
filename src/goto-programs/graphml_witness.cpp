@@ -15,6 +15,7 @@ Author: Daniel Kroening
 #include <util/byte_operators.h>
 #include <util/c_types.h>
 #include <util/cprover_prefix.h>
+#include <util/find_symbols.h>
 #include <util/namespace.h>
 #include <util/pointer_predicates.h>
 #include <util/prefix.h>
@@ -47,14 +48,13 @@ void graphml_witnesst::remove_l0_l1(exprt &expr)
       expr=to_ssa_expr(expr).get_original_expr();
     else
     {
-      std::string identifier=
-        id2string(to_symbol_expr(expr).get_identifier());
+      std::string identifier = id2string(to_symbol_expr(expr).identifier());
 
       std::string::size_type l0_l1=identifier.find_first_of("!@");
       if(l0_l1!=std::string::npos)
       {
         identifier.resize(l0_l1);
-        to_symbol_expr(expr).set_identifier(identifier);
+        to_symbol_expr(expr).identifier(identifier);
       }
     }
 
@@ -261,7 +261,7 @@ static bool contains_symbol_prefix(const exprt &expr, const std::string &prefix)
 {
   if(
     expr.id() == ID_symbol &&
-    to_symbol_expr(expr).get_identifier().starts_with(prefix))
+    to_symbol_expr(expr).identifier().starts_with(prefix))
   {
     return true;
   }
@@ -272,6 +272,55 @@ static bool contains_symbol_prefix(const exprt &expr, const std::string &prefix)
       return true;
   }
   return false;
+}
+
+/// Check if a function is built-in (CPROVER library), has no body,
+/// or does not exist in the symbol table
+static bool is_function_built_in_or_extern(
+  const namespacet &ns,
+  const irep_idt &function_id)
+{
+  const symbolt *symbol_ptr = nullptr;
+  if(ns.lookup(function_id, symbol_ptr))
+    return true; // not found -- not a user function
+
+  if(symbol_ptr->type.id() != ID_code)
+    return true; // not a function
+
+  if(symbol_ptr->value.is_nil())
+    return true; // no body (truly extern)
+
+  if(symbol_ptr->location.is_built_in())
+    return true; // body from a built-in library source
+
+  return false;
+}
+
+/// Check if all symbols in an expression are in scope.
+/// Note: scope is determined by the prefix before the first "::". This is
+/// correct for CBMC's C front-end where locals are named "function::N::var"
+/// and function_id is "function". JBMC does not use graphml witnesses.
+static bool all_symbols_in_scope(const exprt &expr, const irep_idt &function_id)
+{
+  find_symbols_sett symbols;
+  find_symbols(expr, symbols);
+
+  for(const auto &symbol_id : symbols)
+  {
+    if(id2string(symbol_id).find(CPROVER_PREFIX) != std::string::npos)
+      continue;
+
+    std::string symbol_str = id2string(symbol_id);
+    auto scope_sep = symbol_str.find("::");
+
+    if(scope_sep != std::string::npos)
+    {
+      if(symbol_str.substr(0, scope_sep) != id2string(function_id))
+        return false;
+    }
+  }
+
+  return true;
 }
 
 /// counterexample witness
@@ -439,7 +488,7 @@ void graphml_witnesst::operator()(const goto_tracet &goto_trace)
         it->type == goto_trace_stept::typet::ASSIGNMENT &&
         lhs_object.has_value())
       {
-        const std::string &lhs_id = id2string(lhs_object->get_identifier());
+        const std::string &lhs_id = id2string(lhs_object->identifier());
         if(lhs_id.find("pthread_create::thread") != std::string::npos)
         {
           xmlt &data_t = edge.new_element("data");
@@ -460,30 +509,41 @@ void graphml_witnesst::operator()(const goto_tracet &goto_trace)
                to_multi_ary_expr(it->full_lhs_value).op0().get(ID_value)),
              "INVALID-")))
         {
-          xmlt &val = edge.new_element("data");
-          val.set_attribute("key", "assumption");
+          // Determine effective scope from lhs_id: the prefix before the
+          // first "::" matches function_id in CBMC's C naming convention
+          // (e.g., "main::1::x" -> "main").
+          irep_idt scope_function = it->function_id;
+          auto sep = lhs_id.find("::");
+          if(sep != std::string::npos)
+            scope_function = lhs_id.substr(0, sep);
 
+          // Skip assumptions from __CPROVER_initialize,
+          // built-in/extern functions, or with out-of-scope
+          // symbols in the RHS
           code_assignt assign{it->full_lhs, it->full_lhs_value};
-          val.data = convert_assign_rec(lhs_id, assign);
-
-          if(!it->function_id.empty())
+          if(
+            scope_function != CPROVER_PREFIX "initialize" &&
+            !is_function_built_in_or_extern(ns, scope_function) &&
+            all_symbols_in_scope(assign.rhs(), scope_function))
           {
-            xmlt &val_s = edge.new_element("data");
-            val_s.set_attribute("key", "assumption.scope");
-            irep_idt function_id = it->function_id;
-            const symbolt *symbol_ptr = nullptr;
-            if(!ns.lookup(lhs_id, symbol_ptr) && symbol_ptr->is_parameter)
+            xmlt &val = edge.new_element("data");
+            val.set_attribute("key", "assumption");
+
+            val.data = convert_assign_rec(lhs_id, assign);
+
+            if(!scope_function.empty())
             {
-              function_id = lhs_id.substr(0, lhs_id.find("::"));
+              xmlt &val_s = edge.new_element("data");
+              val_s.set_attribute("key", "assumption.scope");
+              val_s.data = id2string(scope_function);
             }
-            val_s.data = id2string(function_id);
-          }
 
-          if(has_prefix(val.data, "\\result ="))
-          {
-            xmlt &val_f = edge.new_element("data");
-            val_f.set_attribute("key", "assumption.resultfunction");
-            val_f.data = id2string(it->function_id);
+            if(has_prefix(val.data, "\\result ="))
+            {
+              xmlt &val_f = edge.new_element("data");
+              val_f.set_attribute("key", "assumption.resultfunction");
+              val_f.data = id2string(it->function_id);
+            }
           }
         }
       }
@@ -636,10 +696,30 @@ void graphml_witnesst::operator()(const symex_target_equationt &equation)
       {
         irep_idt identifier = it->ssa_lhs.get_object_name();
 
-        graphml[to].has_invariant = true;
+        // Determine effective scope from identifier: the prefix before the
+        // first "::" matches function_id in CBMC's C naming convention
+        // (e.g., "main::1::x" -> "main").
+        irep_idt scope_function = it->source.function_id;
+        std::string id_str = id2string(identifier);
+        auto sep = id_str.find("::");
+        if(sep != std::string::npos)
+          scope_function = id_str.substr(0, sep);
+
         code_assignt assign(it->ssa_lhs, it->ssa_rhs);
-        graphml[to].invariant = convert_assign_rec(identifier, assign);
-        graphml[to].invariant_scope = id2string(it->source.function_id);
+
+        if(
+          scope_function != CPROVER_PREFIX "initialize" &&
+          !is_function_built_in_or_extern(ns, scope_function) &&
+          all_symbols_in_scope(assign.rhs(), scope_function))
+        {
+          graphml[to].has_invariant = true;
+          graphml[to].invariant = convert_assign_rec(identifier, assign);
+
+          if(!scope_function.empty())
+          {
+            graphml[to].invariant_scope = id2string(scope_function);
+          }
+        }
       }
 
       graphml[to].in[from].xml_node = edge;

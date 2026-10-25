@@ -1,0 +1,169 @@
+---
+"$schema": https://json-schema.org/draft/2020-12/schema
+"$id": "https://gitlab.com/sosy-lab/benchmarking/sv-witnesses/schemas/correctness"
+title: Format for Correctness Witnesses, version 2.1
+type: array
+items:
+  type: object
+  required:
+  - entry_type
+  - metadata
+  - content
+  properties:
+    entry_type:
+      type: string
+      enum:
+      - invariant_set
+      - ghost_instrumentation
+    metadata: 
+      $ref: "https://gitlab.com/sosy-lab/benchmarking/sv-witnesses/schemas/common/metadata"
+  allOf:
+  - if:
+      properties:
+        entry_type:
+          const: invariant_set
+    then:
+      properties:
+        content:
+          type: array
+          items:
+            type: object
+            oneOf:
+              - required:
+                - invariant
+                properties:
+                  invariant:
+                    type: object
+                    required:
+                    - type
+                    - location
+                    - value
+                    - format
+                    properties:
+                      type:
+                        type: string
+                        enum:
+                        - loop_invariant
+                        - loop_transition_invariant
+                        - location_invariant
+                        - location_transition_invariant
+                      location:
+                        $ref: "https://gitlab.com/sosy-lab/benchmarking/sv-witnesses/schemas/common/location"
+                      value:
+                        type: string
+                      labels:
+                        type: array
+                        items:
+                          type: string
+                          enum:
+                            - inductive
+                      format:
+                        type: string
+                        enum:
+                        - c_expression
+                        - ext_c_expression
+              - required:
+                - contract
+                properties:
+                  contract:
+                    type: object
+                    required:
+                      - type
+                      - location
+                      - format
+                    properties:
+                      type:
+                        type: string
+                        enum:
+                          - function_contract
+                      location:
+                        $ref: "https://gitlab.com/sosy-lab/benchmarking/sv-witnesses/schemas/common/location"
+                      requires:
+                        type: string
+                      ensures:
+                        type: string
+                      labels:
+                        type: array
+                        items:
+                          type: string
+                          enum:
+                            - inductive
+                      format:
+                        type: string
+                        enum:
+                          - c_expression
+                          - ext_c_expression
+  - if:
+      properties:
+        entry_type:
+          const: ghost_instrumentation
+    then:
+      properties:
+        content:
+          type: object
+          required:
+          - ghost_variables
+          - ghost_updates
+          properties:
+            ghost_variables:
+              type: array
+              items:
+                type: object
+                required:
+                - name
+                - type
+                - scope
+                - initial
+                properties:
+                  name:
+                    type: string
+                  type:
+                    type: string
+                  scope:
+                    type: string
+                    enum:
+                    - global
+                  initial:
+                    type: object
+                    required:
+                    - value
+                    - format
+                    properties:
+                      value:
+                        type: string
+                      format:
+                        type: string
+                        enum:
+                        - c_expression
+            ghost_updates:
+              type: array
+              description: |
+                A list of ghost variable updates.
+              items:
+                type: object
+                required:
+                - location
+                - updates
+                properties:
+                  location:
+                    $ref: "https://gitlab.com/sosy-lab/benchmarking/sv-witnesses/schemas/common/location"
+                  branching:
+                    type: boolean
+                  updates:
+                    type: array
+                    items:
+                      type: object
+                      required:
+                      - variable
+                      - value
+                      - format
+                      properties:
+                        variable:
+                          type: string
+                        value:
+                          type: string
+                        format:
+                          type: string
+                          enum:
+                          - c_expression
+additionalProperties: false
