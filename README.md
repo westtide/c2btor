@@ -20,22 +20,21 @@ C2Btor 是一款 C 语言程序验证工具。它将 C 程序转换为硬件模�
 # 配置：在 build 目录生成构建文件
 cmake -S . -B build
 
-# 编译 C2BTOR 及其依赖，最多使用 8 个并行任务
+# 编译 C2BTOR 及其依赖
 cmake --build build --target c2btor -j8
 
 build/bin/c2btor --version
 ```
 
-测试程序默认关闭。
 
 ## BTOR2 建模
 
 ```sh
 build/bin/c2btor program.c --goto-btor2 --inline --32 \
-  --array bv --goto-btor2-out model.btor2
+  --array array --goto-btor2-out model.btor2
 ```
 
-输入程序应含断言或错误函数调用。转换器默认使用 object + BV；也可用 `--array array` 为支持数组的后端生成 Array 模型。
+输入程序应含断言或错误函数调用。
 
 | 参数                                   | 用途                                       |
 | -------------------------------------- | ------------------------------------------ |
@@ -70,7 +69,7 @@ build/bin/c2btor program.c --goto-btor2 --inline --32 \
   
    [c2btor-verify](c2btor-verify)
 
-- rIC3: [rIC3 仓库](https://github.com/gipsyh/rIC3)，不支持 Array sort：
+- rIC3: [rIC3 仓库](https://github.com/gipsyh/rIC3)，不支持 Array sort，尚未支持 rIC3 的 violation witness 回译：
 
   ```sh
   ric3 check model.btor2 portfolio
