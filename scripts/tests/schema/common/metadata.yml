@@ -1,0 +1,99 @@
+"$id": "https://gitlab.com/sosy-lab/benchmarking/sv-witnesses/schemas/common/metadata"
+type: object
+required:
+- format_version
+- uuid
+- creation_time
+- producer
+- task
+properties:
+  format_version:
+    type: string
+    description: |
+      The `version` of the format is given as a string (e.g., "2.1").
+  uuid:
+    type: string
+    format: uuid
+    description: |
+      The `uuid` is a unique identifier of the entry;
+      it uses the UUID format defined in RFC4122.
+  creation_time:
+    type: string
+    format: date-time
+    description: |
+      The `creation_time` describes the date and time when the entry was created;
+      it uses the format given by ISO 8601 (e.g., "2024-03-06T15:21:07Z").
+  producer:
+    type: object
+    required:
+    - name
+    - version
+    description: |
+      The key `producer` describes the tool that produced the entry.
+    properties:
+      name:
+        type: string
+        description: |
+          The name of the tool that produced the witness.
+      version:
+        type: string
+        description: |
+          The version of the tool.
+      configuration:
+        type: string
+        description: |
+          The configuration in which the tool ran.
+      command_line:
+        type: string
+        description: |
+          The command line with which the tool ran;
+          it should be a bash-compliant command.
+      description:
+        type: string
+        description: |
+          Any information not fitting in the previous items.
+  task:
+    type: object
+    required:
+    - input_files
+    - input_file_hashes
+    - specification
+    - data_model
+    - language
+    description: |
+      The task describes the verification task to which the entry is related.
+    properties:
+      input_files:
+        type: array
+        items:
+          type: string
+        description: |
+          The list of files given as input to the verifier,
+          e.g., ["path/f1.c", "path/f2.c"] (yml array) 
+          or "- path/f.c" (yml sequence).
+      input_file_hashes:
+        type: object
+        additionalProperties:
+          type: string
+        description: |
+          The SHA-256 hashes of all files in input_files,
+          e.g. {"path/f1.c": 511..., "path/f2.c": f70...}
+      specification:
+        type: string
+        description: |
+          The specification considered by the verifier;
+          it uses the SV-COMP format given at
+          https://sv-comp.sosy-lab.org/, under rules 
+          (subject to change from year to year).
+      data_model:
+        enum:
+        - ILP32
+        - LP64
+        description: |
+          The data model assumed for the input program.
+      language:
+        enum:
+        - C
+        description: |
+          The programming language of the input files;
+          the format currently supports only C.

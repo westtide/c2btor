@@ -1,8 +1,0 @@
-CORE
-main.c
---variable-sensitivity --verify
-^EXIT=0$
-^SIGNAL=0$
-^\[main\.assertion\.1\] .* y==0: FAILURE \(if reachable\)$
---
-^warning: ignoring

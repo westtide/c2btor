@@ -461,7 +461,7 @@ void value_set_fit::get_value_set_rec(
   {
     // just keep a reference to the ident in the set
     // (if it exists)
-    irep_idt ident = id2string(to_symbol_expr(expr).get_identifier()) + suffix;
+    irep_idt ident = id2string(to_symbol_expr(expr).identifier()) + suffix;
     valuest::const_iterator v_it=values.find(ident);
 
     if(ident.starts_with(alloc_adapter_prefix))
@@ -1208,7 +1208,7 @@ void value_set_fit::assign_rec(
   }
   else if(lhs.id()==ID_symbol)
   {
-    const irep_idt &identifier = to_symbol_expr(lhs).get_identifier();
+    const irep_idt &identifier = to_symbol_expr(lhs).identifier();
 
     if(
       identifier.starts_with("value_set::dynamic_object") ||
@@ -1460,6 +1460,11 @@ void value_set_fit::apply_code(const codet &code, const namespacet &ns)
   }
   else if(statement == ID_havoc_object)
   {
+  }
+  else if(id2string(statement).rfind("c2btor_", 0) == 0)
+  {
+    // C2Btor heap-lowering intrinsics: no pointer variable is modified; see
+    // the matching case in value_set.cpp.
   }
   else
     throw

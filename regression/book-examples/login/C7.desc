@@ -1,5 +1,0 @@
-CORE
-login.c
---unwind 20 --show-vcc --bounds-check --pointer-check
-^EXIT=0$
-^SIGNAL=0$

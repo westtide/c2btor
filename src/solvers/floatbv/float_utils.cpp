@@ -91,6 +91,10 @@ bvt float_utilst::to_integer(
   // The following is the usual case in ANSI-C, and we optimize for that.
   PRECONDITION(rounding_mode_bits.round_to_zero.is_true());
 
+  // Keep in sync with float_bvt::to_integer — the body below is a
+  // line-for-line translation of that function between the
+  // literalt/bvt and exprt APIs.
+
   const unbiased_floatt unpacked = unpack(src);
 
   bvt fraction = unpacked.fraction;
@@ -103,10 +107,17 @@ bvt float_utilst::to_integer(
       fraction.begin(), lsb_extension.begin(), lsb_extension.end());
   }
 
-  // if the exponent is positive, shift right
-  bvt offset =
-    bv_utils.build_constant(fraction.size() - 1, unpacked.exponent.size());
-  bvt distance = bv_utils.sub(offset, unpacked.exponent);
+  // if the exponent is positive, shift right by (fraction.size() - 1) minus
+  // the exponent. The shift distance is built in a bit-vector wide enough to
+  // hold both `fraction.size() - 1` and the (sign-extended) exponent, so it
+  // does not wrap for wide destination types -- e.g. a narrow source such as
+  // _Float16 (spec.e = 5) converted to a 64-bit integer. Keep in sync with
+  // float_bvt::to_integer.
+  const std::size_t distance_width =
+    std::max(unpacked.exponent.size(), address_bits(fraction.size()) + 1);
+  bvt offset = bv_utils.build_constant(fraction.size() - 1, distance_width);
+  bvt distance = bv_utils.sub(
+    offset, bv_utils.sign_extension(unpacked.exponent, distance_width));
   bvt shift_result =
     bv_utils.shift(fraction, bv_utilst::shiftt::SHIFT_LRIGHT, distance);
 
@@ -494,6 +505,132 @@ bvt float_utilst::mul(const bvt &src1, const bvt &src2)
   return round_and_pack(result);
 }
 
+bvt float_utilst::fma(
+  const bvt &multiply_lhs,
+  const bvt &multiply_rhs,
+  const bvt &addend)
+{
+  // Fused multiply-add: round(src1 * src2 + src3) with a single rounding.
+  // The product src1 * src2 is computed exactly (double-width fraction),
+  // then src3 is added, and the result is rounded once.
+
+  const unbiased_floatt unpacked_lhs = unpack(multiply_lhs);
+  const unbiased_floatt unpacked_rhs = unpack(multiply_rhs);
+  const unbiased_floatt unpacked_add = unpack(addend);
+
+  // --- Exact product a*b ---
+  const std::size_t frac_size = unpacked_lhs.fraction.size(); // f+1
+
+  bvt prod_fraction = bv_utils.unsigned_multiplier(
+    bv_utils.zero_extension(unpacked_lhs.fraction, frac_size * 2),
+    bv_utils.zero_extension(unpacked_rhs.fraction, frac_size * 2));
+  // Product fraction has width 2*(f+1) bits (double-width fraction w.r.t.
+  // inputs).
+  // The value is prod_fraction * 2^(prod_exponent - (prod_fraction.size()-1)).
+  // Keep full width for exact intermediate result.
+
+  bvt prod_exponent = bv_utils.add(
+    bv_utils.sign_extension(
+      unpacked_lhs.exponent, unpacked_lhs.exponent.size() + 2),
+    bv_utils.sign_extension(
+      unpacked_rhs.exponent, unpacked_rhs.exponent.size() + 2));
+  prod_exponent = bv_utils.inc(prod_exponent);
+
+  // When either multiplicand is zero, the product fraction is all zeros
+  // but prod_exponent is still the sum of the operand exponents, which can
+  // be very large.  During alignment the addend would then be treated as
+  // the smaller operand and shifted out, losing its bits.  Force
+  // prod_exponent to the minimum representable value in that case so the
+  // addend always dominates.
+  literalt product_is_zero = prop.lor(unpacked_lhs.zero, unpacked_rhs.zero);
+  bvt min_exponent = bv_utils.build_constant(
+    -(mp_integer(1) << (prod_exponent.size() - 2)), prod_exponent.size());
+  prod_exponent = bv_utils.select(product_is_zero, min_exponent, prod_exponent);
+
+  literalt prod_sign = prop.lxor(unpacked_lhs.sign, unpacked_rhs.sign);
+
+  // --- Align c's fraction to the product's wider format ---
+  // Product fraction: prod_width bits, binary point after MSB.
+  // c fraction: (f+1) bits. Pad on the right to match width, then
+  // adjust exponent to compensate.
+  const std::size_t prod_width = prod_fraction.size();
+  const std::size_t c_pad = prod_width - frac_size;
+  bvt c_fraction =
+    bv_utils.concatenate(bv_utils.zeros(c_pad), unpacked_add.fraction);
+  bvt c_exponent =
+    bv_utils.sign_extension(unpacked_add.exponent, prod_exponent.size());
+
+  // --- Add product + c (same logic as add_sub) ---
+  bvt exp_diff = bv_utils.sub(prod_exponent, c_exponent);
+  literalt c_bigger = exp_diff.back();
+
+  bvt bigger_exp = bv_utils.select(c_bigger, c_exponent, prod_exponent);
+  bvt big_frac = bv_utils.select(c_bigger, c_fraction, prod_fraction);
+  bvt small_frac = bv_utils.select(c_bigger, prod_fraction, c_fraction);
+
+  bvt distance = bv_utils.absolute_value(exp_diff);
+  bvt limited_dist = limit_distance(distance, mp_integer(prod_width + 3));
+
+  bvt big_padded = bv_utils.concatenate(bv_utils.zeros(3), big_frac);
+  bvt small_padded = bv_utils.concatenate(bv_utils.zeros(3), small_frac);
+
+  literalt sticky_bit;
+  bvt small_shifted =
+    sticky_right_shift(small_padded, limited_dist, sticky_bit);
+  small_shifted[0] = prop.lor(small_shifted[0], sticky_bit);
+
+  bvt big_ext = bv_utils.zero_extension(big_padded, big_padded.size() + 2);
+  bvt small_ext =
+    bv_utils.zero_extension(small_shifted, small_shifted.size() + 2);
+
+  literalt subtract_lit = prop.lxor(prod_sign, unpacked_add.sign);
+  bvt sum = bv_utils.add_sub(big_ext, small_ext, subtract_lit);
+
+  literalt fraction_sign = sum.back();
+  sum = bv_utils.absolute_value(sum);
+
+  unbiased_floatt result;
+  result.fraction = sum;
+  result.exponent = bv_utils.add(
+    bv_utils.sign_extension(bigger_exp, bigger_exp.size() + 1),
+    bv_utils.build_constant(2, bigger_exp.size() + 1));
+
+  // Sign
+  literalt add_sub_sign = prop.lxor(
+    prop.lselect(c_bigger, unpacked_add.sign, prod_sign), fraction_sign);
+
+  // NaN: any input NaN, inf*0, or inf+(-inf) in the addition
+  literalt prod_inf = prop.lor(unpacked_lhs.infinity, unpacked_rhs.infinity);
+  result.NaN = prop.lor(
+    {is_NaN(multiply_lhs),
+     is_NaN(multiply_rhs),
+     is_NaN(addend),
+     prop.land(unpacked_lhs.zero, unpacked_rhs.infinity),
+     prop.land(unpacked_rhs.zero, unpacked_lhs.infinity),
+     prop.land(
+       prop.land(prod_inf, unpacked_add.infinity),
+       prop.lxor(prod_sign, unpacked_add.sign))});
+
+  result.infinity =
+    prop.land(!result.NaN, prop.lor(prod_inf, unpacked_add.infinity));
+
+  result.zero = prop.land(
+    !prop.lor(result.infinity, result.NaN), !prop.lor(result.fraction));
+
+  literalt infinity_sign = prop.lselect(prod_inf, prod_sign, unpacked_add.sign);
+  literalt zero_sign = prop.lselect(
+    rounding_mode_bits.round_to_minus_inf,
+    prop.lor(prod_sign, unpacked_add.sign),
+    prop.land(prod_sign, unpacked_add.sign));
+
+  result.sign = prop.lselect(
+    result.infinity,
+    infinity_sign,
+    prop.lselect(result.zero, zero_sign, add_sub_sign));
+
+  return round_and_pack(result);
+}
+
 bvt float_utilst::div(const bvt &src1, const bvt &src2)
 {
   // unpack
@@ -802,7 +939,7 @@ void float_utilst::normalization_shift(bvt &fraction, bvt &exponent)
     literalt shift=prop.land(equal);
 
     // build shifted value
-    bvt shifted_fraction=bv_utils.shift(fraction, bv_utilst::LEFT, i);
+    bvt shifted_fraction=bv_utils.shift(fraction, bv_utilst::shiftt::SHIFT_LEFT, i);
     bv_utils.cond_implies_equal(shift, shifted_fraction, new_fraction);
 
     // build new exponent
@@ -835,11 +972,18 @@ void float_utilst::normalization_shift(bvt &fraction, bvt &exponent)
 
   bvt exponent_delta=bv_utils.zeros(exponent.size());
 
+  // Fraction smaller than the max distance? Pad up with zeros.
+  std::size_t max_distance = 1 << (depth - 1);
+
+  if(fraction.size() < max_distance)
+    fraction = bv_utils.zero_extension(fraction, max_distance);
+
   for(int d=depth-1; d>=0; d--)
   {
     std::size_t distance=(1<<d);
+
     INVARIANT(
-      fraction.size() > distance, "fraction must be larger than distance");
+      fraction.size() >= distance, "fraction must be larger or equal distance");
 
     // check if first 'distance'-many bits are zeros
     const bvt prefix=bv_utils.extract_msb(fraction, distance);

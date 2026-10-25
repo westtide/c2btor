@@ -1,0 +1,345 @@
+{
+  "scope": "Phase 2 logical-array finite regression candidates, including object-storage fallbacks; stable unwritten bytes follow the converter's declared model contract",
+  "cases": [
+    {
+      "name": "logical-multidim",
+      "source": "phase2_multidim.c",
+      "inputs": [
+        1,
+        1
+      ],
+      "array_storage_checks": [
+        {
+          "symbol_regex": "::a$",
+          "logical_when_enabled": true,
+          "rank": 2,
+          "element_width": 32,
+          "latched_dimensions": 0
+        }
+      ]
+    },
+    {
+      "name": "logical-vla-latched",
+      "source": "phase2_vla_latched.c",
+      "inputs": [
+        4
+      ],
+      "array_storage_checks": [
+        {
+          "symbol_regex": "::a$",
+          "logical_when_enabled": true,
+          "rank": 1,
+          "element_width": 32,
+          "latched_dimensions": 1
+        }
+      ]
+    },
+    {
+      "name": "logical-static-init",
+      "source": "array_init.c",
+      "inputs": [
+        1
+      ],
+      "array_storage_checks": [
+        {
+          "symbol_regex": "^static_values$",
+          "logical_when_enabled": true,
+          "rank": 1,
+          "element_width": 32,
+          "static_lifetime": true
+        },
+        {
+          "symbol_regex": "^static_zero$",
+          "logical_when_enabled": true,
+          "rank": 1,
+          "element_width": 32,
+          "static_lifetime": true
+        },
+        {
+          "symbol_regex": "::local_values$",
+          "logical_when_enabled": true,
+          "rank": 1,
+          "element_width": 32,
+          "static_lifetime": false
+        }
+      ]
+    },
+    {
+      "name": "logical-partial-init-2",
+      "source": "phase2_automatic_partial.c",
+      "inputs": [
+        2
+      ],
+      "array_storage_checks": [
+        {
+          "symbol_regex": "::a$",
+          "logical_when_enabled": true,
+          "rank": 1,
+          "element_width": 32
+        }
+      ]
+    },
+    {
+      "name": "logical-partial-init-3",
+      "source": "phase2_automatic_partial.c",
+      "inputs": [
+        3
+      ],
+      "array_storage_checks": [
+        {
+          "symbol_regex": "::a$",
+          "logical_when_enabled": true,
+          "rank": 1,
+          "element_width": 32
+        }
+      ]
+    },
+    {
+      "name": "logical-stable-byte",
+      "source": "phase2_stable_bytes.c",
+      "inputs": [
+        1
+      ],
+      "vary_declaration_inputs": true,
+      "array_storage_checks": [
+        {
+          "symbol_regex": "::a$",
+          "logical_when_enabled": true,
+          "rank": 1,
+          "element_width": 8
+        }
+      ]
+    },
+    {
+      "name": "logical-last-write",
+      "source": "phase2_last_write.c",
+      "inputs": [
+        1,
+        99
+      ],
+      "array_storage_checks": [
+        {
+          "symbol_regex": "::a$",
+          "logical_when_enabled": true,
+          "rank": 1,
+          "element_width": 32
+        }
+      ]
+    },
+    {
+      "name": "fallback-address-escape",
+      "source": "phase2_address_escape.c",
+      "inputs": [
+        1
+      ],
+      "array_storage_checks": [
+        {
+          "symbol_regex": "::a$",
+          "logical_when_enabled": false
+        }
+      ]
+    },
+    {
+      "name": "fallback-byte-alias",
+      "source": "phase2_byte_alias.c",
+      "inputs": [
+        0
+      ],
+      "array_storage_checks": [
+        {
+          "symbol_regex": "::a$",
+          "logical_when_enabled": false
+        }
+      ]
+    },
+    {
+      "name": "logical-bool",
+      "source": "phase2_bool.c",
+      "inputs": [
+        1,
+        2
+      ],
+      "array_storage_checks": [
+        {
+          "symbol_regex": "^static_flags$",
+          "logical_when_enabled": true,
+          "rank": 1,
+          "element_width": 1,
+          "static_lifetime": true
+        },
+        {
+          "symbol_regex": "::automatic_flags$",
+          "logical_when_enabled": true,
+          "rank": 1,
+          "element_width": 1,
+          "static_lifetime": false
+        }
+      ]
+    },
+    {
+      "name": "logical-pointer-identity",
+      "source": "phase2_pointer_identity.c",
+      "inputs": [
+        1
+      ],
+      "compare_observations": [
+        {
+          "name": "pointer_bits",
+          "assign_symbol_regex": "::pointer_bits$"
+        }
+      ],
+      "array_storage_checks": [
+        {
+          "symbol_regex": "::logical_before_object$",
+          "logical_when_enabled": true,
+          "rank": 1,
+          "element_width": 32
+        }
+      ]
+    },
+    {
+      "name": "fallback-generic-null",
+      "source": "phase2_generic_alias.c",
+      "inputs": [
+        0,
+        1
+      ],
+      "compare_observations": [
+        {
+          "name": "pointer_bits",
+          "assign_symbol_regex": "::return_value_pointer_integer$"
+        }
+      ],
+      "array_storage_checks": [
+        {
+          "symbol_regex": "::fallback_array$",
+          "logical_when_enabled": false
+        }
+      ]
+    },
+    {
+      "name": "logical-large-used-vla",
+      "source": "phase2_large_vla.c",
+      "inputs": [
+        100000000
+      ],
+      "architectures": [
+        "32"
+      ],
+      "configs": [
+        "bv",
+        "array",
+        "mixed"
+      ],
+      "conversion_rejections": [
+        {
+          "without_flag": "--goto-btor2-logical-arrays",
+          "message": "upper bound 400000000 bytes exceeds the signed object-offset range (268435455 bytes)"
+        },
+        {
+          "with_flag": "--goto-btor2-logical-arrays",
+          "configs": [
+            "bv"
+          ],
+          "message": "exceeds the packed bitvector width limit or has no bound"
+        }
+      ],
+      "array_storage_checks": [
+        {
+          "symbol_regex": "::a$",
+          "logical_when_enabled": true,
+          "rank": 1,
+          "element_width": 32,
+          "latched_dimensions": 1
+        }
+      ]
+    },
+    {
+      "name": "logical-large-write-only-vla",
+      "source": "phase2_large_write_only.c",
+      "inputs": [
+        100000000,
+        7
+      ],
+      "architectures": [
+        "32"
+      ],
+      "conversion_rejections": [
+        {
+          "without_flag": "--goto-btor2-logical-arrays",
+          "message": "upper bound 400000000 bytes exceeds the signed object-offset range (268435455 bytes)"
+        }
+      ],
+      "array_storage_checks": [
+        {
+          "symbol_regex": "::unused$",
+          "logical_when_enabled": true,
+          "rank": 1,
+          "element_width": 32,
+          "unused_storage": true,
+          "latched_dimensions": 0
+        }
+      ],
+      "compare_observations": [
+        {
+          "name": "pointer_bits",
+          "assign_symbol_regex": "::pointer_bits$"
+        }
+      ],
+      "required_nondet_calls": 2
+    },
+    {
+      "name": "logical-float",
+      "source": "phase2_float.c",
+      "inputs": [
+        1
+      ],
+      "array_storage_checks": [
+        {
+          "symbol_regex": "^static_float$",
+          "logical_when_enabled": true,
+          "rank": 1,
+          "element_width": 32,
+          "static_lifetime": true
+        },
+        {
+          "symbol_regex": "^static_double$",
+          "logical_when_enabled": true,
+          "rank": 1,
+          "element_width": 64,
+          "static_lifetime": true
+        },
+        {
+          "symbol_regex": "::automatic_float$",
+          "logical_when_enabled": true,
+          "rank": 1,
+          "element_width": 32,
+          "static_lifetime": false
+        },
+        {
+          "symbol_regex": "::automatic_double$",
+          "logical_when_enabled": true,
+          "rank": 1,
+          "element_width": 64,
+          "static_lifetime": false
+        }
+      ]
+    },
+    {
+      "name": "logical-dimension-effect",
+      "source": "phase2_dimension_effect.c",
+      "inputs": [],
+      "array_storage_checks": [
+        {
+          "symbol_regex": "::a$",
+          "logical_when_enabled": true,
+          "rank": 1,
+          "element_width": 32,
+          "unused_storage": true,
+          "latched_dimensions": 0,
+          "require_object_data": false
+        }
+      ]
+    }
+  ]
+}

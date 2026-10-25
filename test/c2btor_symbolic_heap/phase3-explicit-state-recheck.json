@@ -1,0 +1,1676 @@
+{
+  "status": "pass",
+  "scope": "Supplied finite prefixes, parser/type checks, explicit no-init Array state seed coverage only; no solver/model checker or C safety/equivalence verdict.",
+  "supersedes": "Only the no-init Array state seed coverage claim in finite-phase3-results.json. Historical conversion hashes and raw outputs remain unchanged.",
+  "groups": [
+    {
+      "directory": "results/finite-phase3-explicit-states",
+      "case_runs": 80,
+      "status_counts": {
+        "finite_regression_pass": 68,
+        "expected_rejection": 12
+      },
+      "binary_sha256": "1044d1eefec21314869c54fbaf74f89033b08598cc2b04a495a0eac63cb6343d",
+      "feature_flags": [
+        "--goto-btor2-symbolic-heap",
+        "--goto-btor2-symbolic-heap-arrays",
+        "--goto-btor2-symbolic-heap-wide-offsets"
+      ],
+      "run_sha256": "2c8a4c2c797f130cfd1e2ade5c05e19923c1d8600c23c53734243da8bee28010",
+      "results_sha256": "4269c17342c0cbac706066e5207ccc55a7d00d990ca8d5d5a344c27fa0a4671e",
+      "summary_sha256": "bd833c10e034a41d7989cd33690209ed5b90632d89d4f816ba0fa5f55a49a307",
+      "manifest_sha256": "dc0acc68792b8c75b0b4c83bbf8f1fb2f299d024f5ba5989f4ba5e76f684fe29",
+      "fixture_types_sha256": "69bf1ebcf2e72284eb9c442f0b91f703b7b09411fb5ffcf0a761fd94fbbca22b"
+    },
+    {
+      "directory": "results/finite-phase3-explicit-states-bv-fallback",
+      "case_runs": 40,
+      "status_counts": {
+        "finite_regression_pass": 34,
+        "expected_rejection": 6
+      },
+      "binary_sha256": "1044d1eefec21314869c54fbaf74f89033b08598cc2b04a495a0eac63cb6343d",
+      "feature_flags": [
+        "--goto-btor2-symbolic-heap",
+        "--goto-btor2-symbolic-heap-arrays",
+        "--goto-btor2-symbolic-heap-wide-offsets",
+        "--goto-btor2-symbolic-heap-bv-array-fallback"
+      ],
+      "run_sha256": "b09dd11dd779bed246a2f8e02ee47c4ae7dddae7204fe85e550b83cb600f5f97",
+      "results_sha256": "ad09d5fd44e35c4389190c5f470737d62b7a8085ec7e597a8741c47c14b6569b",
+      "summary_sha256": "611876d67d66c8c2b1b17363d3e67d7c87478330bcbc7c173cc73a2b12c1aad1",
+      "manifest_sha256": "dc0acc68792b8c75b0b4c83bbf8f1fb2f299d024f5ba5989f4ba5e76f684fe29",
+      "fixture_types_sha256": "69bf1ebcf2e72284eb9c442f0b91f703b7b09411fb5ffcf0a761fd94fbbca22b"
+    }
+  ],
+  "case_runs": 120,
+  "status_counts": {
+    "finite_regression_pass": 102,
+    "expected_rejection": 18
+  },
+  "fixture_simulation_traces": 204,
+  "same_backend_constant_ub_traces": 24,
+  "initial_seed_readback_traces": 4,
+  "total_finite_simulation_traces": 232,
+  "array_seed_byte": 61,
+  "seeded_no_init_array_state_assignments_across_fixture_traces": 388,
+  "all_no_init_array_states_explicitly_assigned_and_initialized_states_excluded": true,
+  "historical_configurations_with_unchanged_source_status_model_map": 108,
+  "historical_configurations_checked": 108,
+  "source_hashes": {
+    "test/c2btor_symbolic_heap/boundary_addressable_pointer.c": "d279c07bd48c0b17b51aea0c3cf9a43e4b3671de8feeedf9a1b0b2e320c7f939",
+    "test/c2btor_symbolic_heap/boundary_pointer_integer.c": "b36bed590c36a6e9d590f1bded26a3c5b567049ef677454f85439e5838a3d6aa",
+    "test/c2btor_symbolic_heap/t2_high_offset.c": "99ab93e165bbeede1fb6844d30c06e6adf5d743ff5ba1c8d2b3955102734b74c",
+    "test/c2btor_symbolic_heap/t2_large_objects.c": "d7d7b0c457b730f506d5870f0eee9906e392c5930d50efb5ed40778fe1e9cd13",
+    "test/c2btor_symbolic_heap/t2_symbolic_extent.c": "7df42750403e9200e3c835446b3eef7b1501eb38a3715b184b8e1463f74e1257",
+    "test/c2btor_symbolic_heap/t3_size_snapshot.c": "6ab80094fc47f213eae0eba9532dad33f3999e4d12ca6d4890f150b1cf093727",
+    "test/c2btor_symbolic_heap/t4_same_object_alias.c": "cc7fe6d90f1c74e61b4f08347efdaa4959fffcadbe96d9fdfff49fd251c27abc",
+    "test/c2btor_symbolic_heap/t5_last_legal.c": "d62297ac33bcb2bee0ede3a9ee59786c0ce32d9588efe2b3d915252c13bc5f1e",
+    "test/c2btor_symbolic_heap/t5_one_past_ub.c": "d5b36f080636687e17736f4dc2535b5b22ab8467fdd662c70d7b042236585ebf",
+    "test/c2btor_symbolic_heap/t6_three_events.c": "cf645ae568e764cc0d5fa387758d3808e8668baed534aa59c412b128fa27f5e8",
+    "test/c2btor_symbolic_heap/t6_unbounded_events.c": "57738d7c9ab0039fec95391ae8fa7bdbd09aa74d5aa2945a1aa4a0b738b4c7fa",
+    "test/c2btor_symbolic_heap/t7_nondet_latch.c": "01e433b8e4e07d8e151da212967c97ba25233f6df2e5dc84e7ec8c4cbfff4a23",
+    "test/c2btor_symbolic_heap/t8_free_ub.c": "a4bb5574cc3b401fd1bcdfcc9d97206912388d41dea56345ffae02aef1a4695c",
+    "test/c2btor_symbolic_heap/t8_mixed_bytes.c": "71b85cf2e6b85ddeef61d5c82ba89bd3908ad30b4b29f79604d2f805534e335a",
+    "test/c2btor_symbolic_heap/t8_symbolic_calloc_zero.c": "51d863e27c76e71dc2262a0cfb1b80c39023f7f24024e0d55a1e37494d48960e",
+    "test/c2btor_symbolic_heap/t8_symbolic_mixed_bytes.c": "cd2e4934969920aae63f9e626fa6b63f70992cf0cac03ccd75b21f3cd7e9d0fb",
+    "test/c2btor_symbolic_heap/t9_malloc_parameter.c": "3702c091436eaab387ac560243817b66ed39b8aac60c5e5a093ea03ad3720fd1",
+    "test/c2btor_symbolic_heap/t9_size_t_arithmetic.c": "bd7bcc072d4ac1fcdcd89591205477bd3e97bbca2c83971a87ddc367558c9126",
+    "test/c2btor_symbolic_heap/t9_unsigned_parameter.c": "7b2961547c7a54f2b9ebb0f7b406785d7b543fbda3ed9c0f2f08b626e256f406",
+    "test/lab1-data/array-fpi/nsqm-iff.c": "afabd041c1f9e44fb1eb4b2a4796412ceecc4ddc5ece54973c70db8b2f8169c2"
+  },
+  "all_configuration_source_model_map_observation_trace_bindings_sha256": "9041cb39a3a635d9cb4efdf68d81f813fe60d299ae272a0e44d7cc2bdfb26dff",
+  "different_N_same_model": [
+    {
+      "architecture": "32",
+      "array": "array",
+      "same_source_and_model": true
+    },
+    {
+      "architecture": "32",
+      "array": "mixed",
+      "same_source_and_model": true
+    },
+    {
+      "architecture": "32",
+      "array": "bv",
+      "same_source_and_model": true
+    },
+    {
+      "architecture": "64",
+      "array": "array",
+      "same_source_and_model": true
+    },
+    {
+      "architecture": "64",
+      "array": "mixed",
+      "same_source_and_model": true
+    },
+    {
+      "architecture": "64",
+      "array": "bv",
+      "same_source_and_model": true
+    }
+  ],
+  "seed_readback_checks": [
+    {
+      "directory": "results/finite-phase3-explicit-state-seed-checks/calloc_byte8",
+      "result_sha256": "dc9ecd331450084347e1ff726668a6487045225e919726b55bb7a36eb92d39ff",
+      "model_map_observation_trace_hashes_checked": true,
+      "status": "pass",
+      "samples": [
+        {
+          "state_node": 21,
+          "state_symbol": "__initial_object_4_data",
+          "initialized_zero_helper": false,
+          "element_bits": 8,
+          "signal": "__symheap_initial_seed_sample_0",
+          "expected_frame0_value": 61,
+          "observed_frame0_value": 61
+        },
+        {
+          "state_node": 108,
+          "state_symbol": "__memory_state_21",
+          "initialized_zero_helper": false,
+          "element_bits": 8,
+          "signal": "__symheap_initial_seed_sample_1",
+          "expected_frame0_value": 61,
+          "observed_frame0_value": 61
+        },
+        {
+          "state_node": 426,
+          "state_symbol": "__zero_object_array_20",
+          "initialized_zero_helper": true,
+          "element_bits": 8,
+          "signal": "__symheap_initial_seed_sample_2",
+          "expected_frame0_value": 0,
+          "observed_frame0_value": 0
+        }
+      ]
+    },
+    {
+      "directory": "results/finite-phase3-explicit-state-seed-checks/free_word32",
+      "result_sha256": "832249ecd363f8f3185a9766660d1bacfa8f5f223aa8534d7050ae8595fb596d",
+      "model_map_observation_trace_hashes_checked": true,
+      "status": "pass",
+      "samples": [
+        {
+          "state_node": 8,
+          "state_symbol": "__initial_object_3_data",
+          "initialized_zero_helper": false,
+          "element_bits": 32,
+          "signal": "__symheap_initial_seed_sample_0",
+          "expected_frame0_value": 1027423549,
+          "observed_frame0_value": 1027423549
+        },
+        {
+          "state_node": 99,
+          "state_symbol": "__memory_state_8",
+          "initialized_zero_helper": false,
+          "element_bits": 32,
+          "signal": "__symheap_initial_seed_sample_1",
+          "expected_frame0_value": 1027423549,
+          "observed_frame0_value": 1027423549
+        }
+      ]
+    },
+    {
+      "directory": "results/finite-phase3-explicit-state-seed-checks/nsqm_byte8",
+      "result_sha256": "35e0c4e91c214d5184e1f4e5f2024cf57486348358cb200f589919082161b6c5",
+      "model_map_observation_trace_hashes_checked": true,
+      "status": "pass",
+      "samples": [
+        {
+          "state_node": 7,
+          "state_symbol": "__initial_object_3_data",
+          "initialized_zero_helper": false,
+          "element_bits": 8,
+          "signal": "__symheap_initial_seed_sample_0",
+          "expected_frame0_value": 61,
+          "observed_frame0_value": 61
+        },
+        {
+          "state_node": 22,
+          "state_symbol": "__initial_object_4_data",
+          "initialized_zero_helper": false,
+          "element_bits": 8,
+          "signal": "__symheap_initial_seed_sample_1",
+          "expected_frame0_value": 61,
+          "observed_frame0_value": 61
+        },
+        {
+          "state_node": 91,
+          "state_symbol": "__memory_state_7",
+          "initialized_zero_helper": false,
+          "element_bits": 8,
+          "signal": "__symheap_initial_seed_sample_2",
+          "expected_frame0_value": 61,
+          "observed_frame0_value": 61
+        },
+        {
+          "state_node": 99,
+          "state_symbol": "__memory_state_22",
+          "initialized_zero_helper": false,
+          "element_bits": 8,
+          "signal": "__symheap_initial_seed_sample_3",
+          "expected_frame0_value": 61,
+          "observed_frame0_value": 61
+        }
+      ]
+    },
+    {
+      "directory": "results/finite-phase3-explicit-state-seed-checks/one_past_word32",
+      "result_sha256": "888478ecd32cd84210c702453a4a4fc30406f2e23f1c8b66090f3f0516cfff94",
+      "model_map_observation_trace_hashes_checked": true,
+      "status": "pass",
+      "samples": [
+        {
+          "state_node": 7,
+          "state_symbol": "__initial_object_3_data",
+          "initialized_zero_helper": false,
+          "element_bits": 32,
+          "signal": "__symheap_initial_seed_sample_0",
+          "expected_frame0_value": 1027423549,
+          "observed_frame0_value": 1027423549
+        },
+        {
+          "state_node": 80,
+          "state_symbol": "__memory_state_7",
+          "initialized_zero_helper": false,
+          "element_bits": 32,
+          "signal": "__symheap_initial_seed_sample_1",
+          "expected_frame0_value": 1027423549,
+          "observed_frame0_value": 1027423549
+        }
+      ]
+    }
+  ],
+  "T1_T2_UB_evidence": [
+    {
+      "case": "T1_original_nsqm_iff",
+      "architecture": "32",
+      "array": "array",
+      "model_sha256": "1e0f526714ce9b40cfdad564c1fed03ee0a5d5b66217448bf7a8e9181872d3fc",
+      "map_sha256": "40e09ead7d10adbb3ab48a37c55fd847423a0d213fbd01b21a8827a0f80b58d7",
+      "traces": {
+        "fixed": {
+          "source_assertion_execution_frames": {
+            "__VERIFIER_assert.unreach-call.1": [
+              64
+            ]
+          },
+          "source_failure_frames": {
+            "__VERIFIER_assert.unreach-call.1": [
+              64
+            ]
+          },
+          "valid_prefix_frames": 66,
+          "first_constraint_violation_frame": 66,
+          "no_init_array_state_count": 4
+        },
+        "varying": {
+          "source_assertion_execution_frames": {
+            "__VERIFIER_assert.unreach-call.1": [
+              64
+            ]
+          },
+          "source_failure_frames": {
+            "__VERIFIER_assert.unreach-call.1": [
+              64
+            ]
+          },
+          "valid_prefix_frames": 66,
+          "first_constraint_violation_frame": 66,
+          "no_init_array_state_count": 4
+        }
+      },
+      "source_abort_constraints": [
+        {
+          "signal": "__symheap_constraint_0",
+          "node": 2767,
+          "width": 1,
+          "constraint_name": "assume_at_loc_9",
+          "source": {
+            "column": "",
+            "file_name": "<builtin-library-abort>",
+            "function": "abort",
+            "line": "6"
+          },
+          "goto_location": 9
+        },
+        {
+          "signal": "__symheap_constraint_1",
+          "node": 2772,
+          "width": 1,
+          "constraint_name": "assume_at_loc_100",
+          "source": {
+            "column": "",
+            "file_name": "<builtin-library-abort>",
+            "function": "abort",
+            "line": "6"
+          },
+          "goto_location": 100
+        }
+      ]
+    },
+    {
+      "case": "T1_original_nsqm_iff",
+      "architecture": "32",
+      "array": "bv",
+      "model_sha256": "1e0f526714ce9b40cfdad564c1fed03ee0a5d5b66217448bf7a8e9181872d3fc",
+      "map_sha256": "dd886a65076bcdf8be207bf988a2e43e42ac6cb2b565242c6cc99a0dc467d802",
+      "traces": {
+        "fixed": {
+          "source_assertion_execution_frames": {
+            "__VERIFIER_assert.unreach-call.1": [
+              64
+            ]
+          },
+          "source_failure_frames": {
+            "__VERIFIER_assert.unreach-call.1": [
+              64
+            ]
+          },
+          "valid_prefix_frames": 66,
+          "first_constraint_violation_frame": 66,
+          "no_init_array_state_count": 4
+        },
+        "varying": {
+          "source_assertion_execution_frames": {
+            "__VERIFIER_assert.unreach-call.1": [
+              64
+            ]
+          },
+          "source_failure_frames": {
+            "__VERIFIER_assert.unreach-call.1": [
+              64
+            ]
+          },
+          "valid_prefix_frames": 66,
+          "first_constraint_violation_frame": 66,
+          "no_init_array_state_count": 4
+        }
+      },
+      "source_abort_constraints": [
+        {
+          "signal": "__symheap_constraint_0",
+          "node": 2767,
+          "width": 1,
+          "constraint_name": "assume_at_loc_9",
+          "source": {
+            "column": "",
+            "file_name": "<builtin-library-abort>",
+            "function": "abort",
+            "line": "6"
+          },
+          "goto_location": 9
+        },
+        {
+          "signal": "__symheap_constraint_1",
+          "node": 2772,
+          "width": 1,
+          "constraint_name": "assume_at_loc_100",
+          "source": {
+            "column": "",
+            "file_name": "<builtin-library-abort>",
+            "function": "abort",
+            "line": "6"
+          },
+          "goto_location": 100
+        }
+      ]
+    },
+    {
+      "case": "T1_original_nsqm_iff",
+      "architecture": "32",
+      "array": "mixed",
+      "model_sha256": "1e0f526714ce9b40cfdad564c1fed03ee0a5d5b66217448bf7a8e9181872d3fc",
+      "map_sha256": "d8cb4b3cd6c20d50087c959e4df250d60176d44ff00fbf4928ece11213113ef0",
+      "traces": {
+        "fixed": {
+          "source_assertion_execution_frames": {
+            "__VERIFIER_assert.unreach-call.1": [
+              64
+            ]
+          },
+          "source_failure_frames": {
+            "__VERIFIER_assert.unreach-call.1": [
+              64
+            ]
+          },
+          "valid_prefix_frames": 66,
+          "first_constraint_violation_frame": 66,
+          "no_init_array_state_count": 4
+        },
+        "varying": {
+          "source_assertion_execution_frames": {
+            "__VERIFIER_assert.unreach-call.1": [
+              64
+            ]
+          },
+          "source_failure_frames": {
+            "__VERIFIER_assert.unreach-call.1": [
+              64
+            ]
+          },
+          "valid_prefix_frames": 66,
+          "first_constraint_violation_frame": 66,
+          "no_init_array_state_count": 4
+        }
+      },
+      "source_abort_constraints": [
+        {
+          "signal": "__symheap_constraint_0",
+          "node": 2767,
+          "width": 1,
+          "constraint_name": "assume_at_loc_9",
+          "source": {
+            "column": "",
+            "file_name": "<builtin-library-abort>",
+            "function": "abort",
+            "line": "6"
+          },
+          "goto_location": 9
+        },
+        {
+          "signal": "__symheap_constraint_1",
+          "node": 2772,
+          "width": 1,
+          "constraint_name": "assume_at_loc_100",
+          "source": {
+            "column": "",
+            "file_name": "<builtin-library-abort>",
+            "function": "abort",
+            "line": "6"
+          },
+          "goto_location": 100
+        }
+      ]
+    },
+    {
+      "case": "T2_symbolic_extent_large",
+      "architecture": "32",
+      "array": "array",
+      "model_sha256": "0fae4ab7303853b881ab8b6c53aa44b46750f6697a77bd138943617a88f6d903",
+      "map_sha256": "9dd0f28fcc8bfc1f8b514715f629730ef772fdc84d571fce96c0cd22a53a3fb7",
+      "traces": {
+        "fixed": {
+          "source_assertion_execution_frames": {
+            "main.assertion.1": [
+              50
+            ]
+          },
+          "source_failure_frames": {
+            "main.assertion.1": []
+          },
+          "valid_prefix_frames": 513,
+          "first_constraint_violation_frame": null,
+          "no_init_array_state_count": 4
+        },
+        "varying": {
+          "source_assertion_execution_frames": {
+            "main.assertion.1": [
+              50
+            ]
+          },
+          "source_failure_frames": {
+            "main.assertion.1": []
+          },
+          "valid_prefix_frames": 513,
+          "first_constraint_violation_frame": null,
+          "no_init_array_state_count": 4
+        }
+      },
+      "storage": {
+        "native_symbolic_storage": true,
+        "allocation_slots": 2,
+        "element_bits": [
+          8,
+          8
+        ],
+        "index_bits": [
+          32,
+          32
+        ],
+        "offset_width": 32
+      }
+    },
+    {
+      "case": "T2_symbolic_extent_large",
+      "architecture": "32",
+      "array": "bv",
+      "model_sha256": "0fae4ab7303853b881ab8b6c53aa44b46750f6697a77bd138943617a88f6d903",
+      "map_sha256": "7d56d63c30c9983c22d4c3cfaf751286bb8c9fadb666ff91e41ba3fda52487e0",
+      "traces": {
+        "fixed": {
+          "source_assertion_execution_frames": {
+            "main.assertion.1": [
+              50
+            ]
+          },
+          "source_failure_frames": {
+            "main.assertion.1": []
+          },
+          "valid_prefix_frames": 513,
+          "first_constraint_violation_frame": null,
+          "no_init_array_state_count": 4
+        },
+        "varying": {
+          "source_assertion_execution_frames": {
+            "main.assertion.1": [
+              50
+            ]
+          },
+          "source_failure_frames": {
+            "main.assertion.1": []
+          },
+          "valid_prefix_frames": 513,
+          "first_constraint_violation_frame": null,
+          "no_init_array_state_count": 4
+        }
+      },
+      "storage": {
+        "native_symbolic_storage": true,
+        "allocation_slots": 2,
+        "element_bits": [
+          8,
+          8
+        ],
+        "index_bits": [
+          32,
+          32
+        ],
+        "offset_width": 32
+      }
+    },
+    {
+      "case": "T2_symbolic_extent_large",
+      "architecture": "32",
+      "array": "mixed",
+      "model_sha256": "0fae4ab7303853b881ab8b6c53aa44b46750f6697a77bd138943617a88f6d903",
+      "map_sha256": "a3be1301a32876ea64b433e09d3a1cf7e5102dd51b369c6456ea1b4ac9b9f8c0",
+      "traces": {
+        "fixed": {
+          "source_assertion_execution_frames": {
+            "main.assertion.1": [
+              50
+            ]
+          },
+          "source_failure_frames": {
+            "main.assertion.1": []
+          },
+          "valid_prefix_frames": 513,
+          "first_constraint_violation_frame": null,
+          "no_init_array_state_count": 4
+        },
+        "varying": {
+          "source_assertion_execution_frames": {
+            "main.assertion.1": [
+              50
+            ]
+          },
+          "source_failure_frames": {
+            "main.assertion.1": []
+          },
+          "valid_prefix_frames": 513,
+          "first_constraint_violation_frame": null,
+          "no_init_array_state_count": 4
+        }
+      },
+      "storage": {
+        "native_symbolic_storage": true,
+        "allocation_slots": 2,
+        "element_bits": [
+          8,
+          8
+        ],
+        "index_bits": [
+          32,
+          32
+        ],
+        "offset_width": 32
+      }
+    },
+    {
+      "case": "T2_symbolic_extent_large",
+      "architecture": "64",
+      "array": "array",
+      "model_sha256": "e44eb0a02e77f0cc3095111dce4e70d791702f6559eb93fa92296f32aa10be32",
+      "map_sha256": "e9c20bae219bae063c7d234338eca8e77d21ad41e3bb19d887161bec5e177f5b",
+      "traces": {
+        "fixed": {
+          "source_assertion_execution_frames": {
+            "main.assertion.1": [
+              50
+            ]
+          },
+          "source_failure_frames": {
+            "main.assertion.1": []
+          },
+          "valid_prefix_frames": 513,
+          "first_constraint_violation_frame": null,
+          "no_init_array_state_count": 4
+        },
+        "varying": {
+          "source_assertion_execution_frames": {
+            "main.assertion.1": [
+              50
+            ]
+          },
+          "source_failure_frames": {
+            "main.assertion.1": []
+          },
+          "valid_prefix_frames": 513,
+          "first_constraint_violation_frame": null,
+          "no_init_array_state_count": 4
+        }
+      },
+      "storage": {
+        "native_symbolic_storage": true,
+        "allocation_slots": 2,
+        "element_bits": [
+          8,
+          8
+        ],
+        "index_bits": [
+          61,
+          61
+        ],
+        "offset_width": 61
+      }
+    },
+    {
+      "case": "T2_symbolic_extent_large",
+      "architecture": "64",
+      "array": "bv",
+      "model_sha256": "e44eb0a02e77f0cc3095111dce4e70d791702f6559eb93fa92296f32aa10be32",
+      "map_sha256": "0348086bc57695ba6e80b123ca6c792be7d93e3067e258d989571364ce43e407",
+      "traces": {
+        "fixed": {
+          "source_assertion_execution_frames": {
+            "main.assertion.1": [
+              50
+            ]
+          },
+          "source_failure_frames": {
+            "main.assertion.1": []
+          },
+          "valid_prefix_frames": 513,
+          "first_constraint_violation_frame": null,
+          "no_init_array_state_count": 4
+        },
+        "varying": {
+          "source_assertion_execution_frames": {
+            "main.assertion.1": [
+              50
+            ]
+          },
+          "source_failure_frames": {
+            "main.assertion.1": []
+          },
+          "valid_prefix_frames": 513,
+          "first_constraint_violation_frame": null,
+          "no_init_array_state_count": 4
+        }
+      },
+      "storage": {
+        "native_symbolic_storage": true,
+        "allocation_slots": 2,
+        "element_bits": [
+          8,
+          8
+        ],
+        "index_bits": [
+          61,
+          61
+        ],
+        "offset_width": 61
+      }
+    },
+    {
+      "case": "T2_symbolic_extent_large",
+      "architecture": "64",
+      "array": "mixed",
+      "model_sha256": "e44eb0a02e77f0cc3095111dce4e70d791702f6559eb93fa92296f32aa10be32",
+      "map_sha256": "bdce678392d21c490729254534b76bc324a1c3faabc1b02b91445498354223dd",
+      "traces": {
+        "fixed": {
+          "source_assertion_execution_frames": {
+            "main.assertion.1": [
+              50
+            ]
+          },
+          "source_failure_frames": {
+            "main.assertion.1": []
+          },
+          "valid_prefix_frames": 513,
+          "first_constraint_violation_frame": null,
+          "no_init_array_state_count": 4
+        },
+        "varying": {
+          "source_assertion_execution_frames": {
+            "main.assertion.1": [
+              50
+            ]
+          },
+          "source_failure_frames": {
+            "main.assertion.1": []
+          },
+          "valid_prefix_frames": 513,
+          "first_constraint_violation_frame": null,
+          "no_init_array_state_count": 4
+        }
+      },
+      "storage": {
+        "native_symbolic_storage": true,
+        "allocation_slots": 2,
+        "element_bits": [
+          8,
+          8
+        ],
+        "index_bits": [
+          61,
+          61
+        ],
+        "offset_width": 61
+      }
+    },
+    {
+      "case": "T2_symbolic_extent_small",
+      "architecture": "32",
+      "array": "array",
+      "model_sha256": "0fae4ab7303853b881ab8b6c53aa44b46750f6697a77bd138943617a88f6d903",
+      "map_sha256": "9dd0f28fcc8bfc1f8b514715f629730ef772fdc84d571fce96c0cd22a53a3fb7",
+      "traces": {
+        "fixed": {
+          "source_assertion_execution_frames": {
+            "main.assertion.1": [
+              50
+            ]
+          },
+          "source_failure_frames": {
+            "main.assertion.1": []
+          },
+          "valid_prefix_frames": 513,
+          "first_constraint_violation_frame": null,
+          "no_init_array_state_count": 4
+        },
+        "varying": {
+          "source_assertion_execution_frames": {
+            "main.assertion.1": [
+              50
+            ]
+          },
+          "source_failure_frames": {
+            "main.assertion.1": []
+          },
+          "valid_prefix_frames": 513,
+          "first_constraint_violation_frame": null,
+          "no_init_array_state_count": 4
+        }
+      },
+      "storage": {
+        "native_symbolic_storage": true,
+        "allocation_slots": 2,
+        "element_bits": [
+          8,
+          8
+        ],
+        "index_bits": [
+          32,
+          32
+        ],
+        "offset_width": 32
+      }
+    },
+    {
+      "case": "T2_symbolic_extent_small",
+      "architecture": "32",
+      "array": "bv",
+      "model_sha256": "0fae4ab7303853b881ab8b6c53aa44b46750f6697a77bd138943617a88f6d903",
+      "map_sha256": "7d56d63c30c9983c22d4c3cfaf751286bb8c9fadb666ff91e41ba3fda52487e0",
+      "traces": {
+        "fixed": {
+          "source_assertion_execution_frames": {
+            "main.assertion.1": [
+              50
+            ]
+          },
+          "source_failure_frames": {
+            "main.assertion.1": []
+          },
+          "valid_prefix_frames": 513,
+          "first_constraint_violation_frame": null,
+          "no_init_array_state_count": 4
+        },
+        "varying": {
+          "source_assertion_execution_frames": {
+            "main.assertion.1": [
+              50
+            ]
+          },
+          "source_failure_frames": {
+            "main.assertion.1": []
+          },
+          "valid_prefix_frames": 513,
+          "first_constraint_violation_frame": null,
+          "no_init_array_state_count": 4
+        }
+      },
+      "storage": {
+        "native_symbolic_storage": true,
+        "allocation_slots": 2,
+        "element_bits": [
+          8,
+          8
+        ],
+        "index_bits": [
+          32,
+          32
+        ],
+        "offset_width": 32
+      }
+    },
+    {
+      "case": "T2_symbolic_extent_small",
+      "architecture": "32",
+      "array": "mixed",
+      "model_sha256": "0fae4ab7303853b881ab8b6c53aa44b46750f6697a77bd138943617a88f6d903",
+      "map_sha256": "a3be1301a32876ea64b433e09d3a1cf7e5102dd51b369c6456ea1b4ac9b9f8c0",
+      "traces": {
+        "fixed": {
+          "source_assertion_execution_frames": {
+            "main.assertion.1": [
+              50
+            ]
+          },
+          "source_failure_frames": {
+            "main.assertion.1": []
+          },
+          "valid_prefix_frames": 513,
+          "first_constraint_violation_frame": null,
+          "no_init_array_state_count": 4
+        },
+        "varying": {
+          "source_assertion_execution_frames": {
+            "main.assertion.1": [
+              50
+            ]
+          },
+          "source_failure_frames": {
+            "main.assertion.1": []
+          },
+          "valid_prefix_frames": 513,
+          "first_constraint_violation_frame": null,
+          "no_init_array_state_count": 4
+        }
+      },
+      "storage": {
+        "native_symbolic_storage": true,
+        "allocation_slots": 2,
+        "element_bits": [
+          8,
+          8
+        ],
+        "index_bits": [
+          32,
+          32
+        ],
+        "offset_width": 32
+      }
+    },
+    {
+      "case": "T2_symbolic_extent_small",
+      "architecture": "64",
+      "array": "array",
+      "model_sha256": "e44eb0a02e77f0cc3095111dce4e70d791702f6559eb93fa92296f32aa10be32",
+      "map_sha256": "e9c20bae219bae063c7d234338eca8e77d21ad41e3bb19d887161bec5e177f5b",
+      "traces": {
+        "fixed": {
+          "source_assertion_execution_frames": {
+            "main.assertion.1": [
+              50
+            ]
+          },
+          "source_failure_frames": {
+            "main.assertion.1": []
+          },
+          "valid_prefix_frames": 513,
+          "first_constraint_violation_frame": null,
+          "no_init_array_state_count": 4
+        },
+        "varying": {
+          "source_assertion_execution_frames": {
+            "main.assertion.1": [
+              50
+            ]
+          },
+          "source_failure_frames": {
+            "main.assertion.1": []
+          },
+          "valid_prefix_frames": 513,
+          "first_constraint_violation_frame": null,
+          "no_init_array_state_count": 4
+        }
+      },
+      "storage": {
+        "native_symbolic_storage": true,
+        "allocation_slots": 2,
+        "element_bits": [
+          8,
+          8
+        ],
+        "index_bits": [
+          61,
+          61
+        ],
+        "offset_width": 61
+      }
+    },
+    {
+      "case": "T2_symbolic_extent_small",
+      "architecture": "64",
+      "array": "bv",
+      "model_sha256": "e44eb0a02e77f0cc3095111dce4e70d791702f6559eb93fa92296f32aa10be32",
+      "map_sha256": "0348086bc57695ba6e80b123ca6c792be7d93e3067e258d989571364ce43e407",
+      "traces": {
+        "fixed": {
+          "source_assertion_execution_frames": {
+            "main.assertion.1": [
+              50
+            ]
+          },
+          "source_failure_frames": {
+            "main.assertion.1": []
+          },
+          "valid_prefix_frames": 513,
+          "first_constraint_violation_frame": null,
+          "no_init_array_state_count": 4
+        },
+        "varying": {
+          "source_assertion_execution_frames": {
+            "main.assertion.1": [
+              50
+            ]
+          },
+          "source_failure_frames": {
+            "main.assertion.1": []
+          },
+          "valid_prefix_frames": 513,
+          "first_constraint_violation_frame": null,
+          "no_init_array_state_count": 4
+        }
+      },
+      "storage": {
+        "native_symbolic_storage": true,
+        "allocation_slots": 2,
+        "element_bits": [
+          8,
+          8
+        ],
+        "index_bits": [
+          61,
+          61
+        ],
+        "offset_width": 61
+      }
+    },
+    {
+      "case": "T2_symbolic_extent_small",
+      "architecture": "64",
+      "array": "mixed",
+      "model_sha256": "e44eb0a02e77f0cc3095111dce4e70d791702f6559eb93fa92296f32aa10be32",
+      "map_sha256": "bdce678392d21c490729254534b76bc324a1c3faabc1b02b91445498354223dd",
+      "traces": {
+        "fixed": {
+          "source_assertion_execution_frames": {
+            "main.assertion.1": [
+              50
+            ]
+          },
+          "source_failure_frames": {
+            "main.assertion.1": []
+          },
+          "valid_prefix_frames": 513,
+          "first_constraint_violation_frame": null,
+          "no_init_array_state_count": 4
+        },
+        "varying": {
+          "source_assertion_execution_frames": {
+            "main.assertion.1": [
+              50
+            ]
+          },
+          "source_failure_frames": {
+            "main.assertion.1": []
+          },
+          "valid_prefix_frames": 513,
+          "first_constraint_violation_frame": null,
+          "no_init_array_state_count": 4
+        }
+      },
+      "storage": {
+        "native_symbolic_storage": true,
+        "allocation_slots": 2,
+        "element_bits": [
+          8,
+          8
+        ],
+        "index_bits": [
+          61,
+          61
+        ],
+        "offset_width": 61
+      }
+    },
+    {
+      "case": "T5_one_past_ub",
+      "architecture": "32",
+      "array": "array",
+      "model_sha256": "d30b99730b1d78c54d8610e5410bd49d88940eb437aef97115aa20b8b55b516a",
+      "map_sha256": "acff49faddaed86429a075522b88ed66f0fc6d0a9c082a99ac0df2efcf70d8b5",
+      "traces": {
+        "fixed": {
+          "source_assertion_execution_frames": {
+            "main.assertion.1": [
+              31
+            ]
+          },
+          "source_failure_frames": {
+            "main.assertion.1": []
+          },
+          "valid_prefix_frames": 513,
+          "first_constraint_violation_frame": null,
+          "no_init_array_state_count": 2
+        },
+        "varying": {
+          "source_assertion_execution_frames": {
+            "main.assertion.1": [
+              31
+            ]
+          },
+          "source_failure_frames": {
+            "main.assertion.1": []
+          },
+          "valid_prefix_frames": 513,
+          "first_constraint_violation_frame": null,
+          "no_init_array_state_count": 2
+        }
+      },
+      "same_backend_constant_ub_observations": {
+        "fixed": {
+          "observed_one_past": [
+            0
+          ],
+          "observed_first_after_ub": [
+            11
+          ]
+        },
+        "varying": {
+          "observed_one_past": [
+            0
+          ],
+          "observed_first_after_ub": [
+            11
+          ]
+        }
+      },
+      "ub_comparison_is_c_safety_proof": false
+    },
+    {
+      "case": "T5_one_past_ub",
+      "architecture": "32",
+      "array": "bv",
+      "model_sha256": "7e474dc0911b78b683d0ab13feccc6db25d3ae05f7fbbbf3345deafbe845fa93",
+      "map_sha256": "9ff6c0f69a0b9e65dcecb1d4c72eeb8610d4d4cdd9ab74eb41c9c2565c2623d8",
+      "traces": {
+        "fixed": {
+          "source_assertion_execution_frames": {
+            "main.assertion.1": [
+              31
+            ]
+          },
+          "source_failure_frames": {
+            "main.assertion.1": []
+          },
+          "valid_prefix_frames": 513,
+          "first_constraint_violation_frame": null,
+          "no_init_array_state_count": 0
+        },
+        "varying": {
+          "source_assertion_execution_frames": {
+            "main.assertion.1": [
+              31
+            ]
+          },
+          "source_failure_frames": {
+            "main.assertion.1": []
+          },
+          "valid_prefix_frames": 513,
+          "first_constraint_violation_frame": null,
+          "no_init_array_state_count": 0
+        }
+      },
+      "same_backend_constant_ub_observations": {
+        "fixed": {
+          "observed_one_past": [
+            0
+          ],
+          "observed_first_after_ub": [
+            11
+          ]
+        },
+        "varying": {
+          "observed_one_past": [
+            0
+          ],
+          "observed_first_after_ub": [
+            11
+          ]
+        }
+      },
+      "ub_comparison_is_c_safety_proof": false
+    },
+    {
+      "case": "T5_one_past_ub",
+      "architecture": "32",
+      "array": "mixed",
+      "model_sha256": "e751f1550e9736f8bed874926dde20b0e02bba3002ee035491c965fc4fd478a8",
+      "map_sha256": "51e04aea16797046eadf1e5efca38ae2c284ae82e25f5ba9385f3a397f7aa756",
+      "traces": {
+        "fixed": {
+          "source_assertion_execution_frames": {
+            "main.assertion.1": [
+              31
+            ]
+          },
+          "source_failure_frames": {
+            "main.assertion.1": []
+          },
+          "valid_prefix_frames": 513,
+          "first_constraint_violation_frame": null,
+          "no_init_array_state_count": 0
+        },
+        "varying": {
+          "source_assertion_execution_frames": {
+            "main.assertion.1": [
+              31
+            ]
+          },
+          "source_failure_frames": {
+            "main.assertion.1": []
+          },
+          "valid_prefix_frames": 513,
+          "first_constraint_violation_frame": null,
+          "no_init_array_state_count": 0
+        }
+      },
+      "same_backend_constant_ub_observations": {
+        "fixed": {
+          "observed_one_past": [
+            0
+          ],
+          "observed_first_after_ub": [
+            11
+          ]
+        },
+        "varying": {
+          "observed_one_past": [
+            0
+          ],
+          "observed_first_after_ub": [
+            11
+          ]
+        }
+      },
+      "ub_comparison_is_c_safety_proof": false
+    },
+    {
+      "case": "T5_one_past_ub",
+      "architecture": "64",
+      "array": "array",
+      "model_sha256": "656114418af535489f278813578b631b8c78dd86fa34a12dac410b964494db4d",
+      "map_sha256": "e008f8813aa97f08e74c623ba95d0fd2e6802fc6439de631552eaa466231b4bd",
+      "traces": {
+        "fixed": {
+          "source_assertion_execution_frames": {
+            "main.assertion.1": [
+              31
+            ]
+          },
+          "source_failure_frames": {
+            "main.assertion.1": []
+          },
+          "valid_prefix_frames": 513,
+          "first_constraint_violation_frame": null,
+          "no_init_array_state_count": 2
+        },
+        "varying": {
+          "source_assertion_execution_frames": {
+            "main.assertion.1": [
+              31
+            ]
+          },
+          "source_failure_frames": {
+            "main.assertion.1": []
+          },
+          "valid_prefix_frames": 513,
+          "first_constraint_violation_frame": null,
+          "no_init_array_state_count": 2
+        }
+      },
+      "same_backend_constant_ub_observations": {
+        "fixed": {
+          "observed_one_past": [
+            0
+          ],
+          "observed_first_after_ub": [
+            11
+          ]
+        },
+        "varying": {
+          "observed_one_past": [
+            0
+          ],
+          "observed_first_after_ub": [
+            11
+          ]
+        }
+      },
+      "ub_comparison_is_c_safety_proof": false
+    },
+    {
+      "case": "T5_one_past_ub",
+      "architecture": "64",
+      "array": "bv",
+      "model_sha256": "a4aac4dbe393d82f16c3b30b7b478580ae220425ff6bdd500e8ec4a4eadbd1f9",
+      "map_sha256": "fd2fc00812a6e5f0c7c17c6f07ee926d126c84afcc000165aa8b5aea3b76c689",
+      "traces": {
+        "fixed": {
+          "source_assertion_execution_frames": {
+            "main.assertion.1": [
+              31
+            ]
+          },
+          "source_failure_frames": {
+            "main.assertion.1": []
+          },
+          "valid_prefix_frames": 513,
+          "first_constraint_violation_frame": null,
+          "no_init_array_state_count": 0
+        },
+        "varying": {
+          "source_assertion_execution_frames": {
+            "main.assertion.1": [
+              31
+            ]
+          },
+          "source_failure_frames": {
+            "main.assertion.1": []
+          },
+          "valid_prefix_frames": 513,
+          "first_constraint_violation_frame": null,
+          "no_init_array_state_count": 0
+        }
+      },
+      "same_backend_constant_ub_observations": {
+        "fixed": {
+          "observed_one_past": [
+            0
+          ],
+          "observed_first_after_ub": [
+            11
+          ]
+        },
+        "varying": {
+          "observed_one_past": [
+            0
+          ],
+          "observed_first_after_ub": [
+            11
+          ]
+        }
+      },
+      "ub_comparison_is_c_safety_proof": false
+    },
+    {
+      "case": "T5_one_past_ub",
+      "architecture": "64",
+      "array": "mixed",
+      "model_sha256": "b1f3ed7c4ab26c2c13bcb3998e614837e5cb31234628c16f39c165872281f772",
+      "map_sha256": "9765cd750cfe8ad38e50e7cb912735f12c62162ed18a0624c01102335b3890ca",
+      "traces": {
+        "fixed": {
+          "source_assertion_execution_frames": {
+            "main.assertion.1": [
+              31
+            ]
+          },
+          "source_failure_frames": {
+            "main.assertion.1": []
+          },
+          "valid_prefix_frames": 513,
+          "first_constraint_violation_frame": null,
+          "no_init_array_state_count": 0
+        },
+        "varying": {
+          "source_assertion_execution_frames": {
+            "main.assertion.1": [
+              31
+            ]
+          },
+          "source_failure_frames": {
+            "main.assertion.1": []
+          },
+          "valid_prefix_frames": 513,
+          "first_constraint_violation_frame": null,
+          "no_init_array_state_count": 0
+        }
+      },
+      "same_backend_constant_ub_observations": {
+        "fixed": {
+          "observed_one_past": [
+            0
+          ],
+          "observed_first_after_ub": [
+            11
+          ]
+        },
+        "varying": {
+          "observed_one_past": [
+            0
+          ],
+          "observed_first_after_ub": [
+            11
+          ]
+        }
+      },
+      "ub_comparison_is_c_safety_proof": false
+    },
+    {
+      "case": "T8_free_ub",
+      "architecture": "32",
+      "array": "array",
+      "model_sha256": "3455056f12799fbb569100d8cd60f233ee0323a4c4a484d97e0135a6c77a4cf8",
+      "map_sha256": "9508755715d21ea1d742d981d846cc19b8406dae32d5b286348f02e635edcc9d",
+      "traces": {
+        "fixed": {
+          "source_assertion_execution_frames": {
+            "main.assertion.1": [
+              53
+            ]
+          },
+          "source_failure_frames": {
+            "main.assertion.1": []
+          },
+          "valid_prefix_frames": 513,
+          "first_constraint_violation_frame": null,
+          "no_init_array_state_count": 2
+        },
+        "varying": {
+          "source_assertion_execution_frames": {
+            "main.assertion.1": [
+              54
+            ]
+          },
+          "source_failure_frames": {
+            "main.assertion.1": []
+          },
+          "valid_prefix_frames": 513,
+          "first_constraint_violation_frame": null,
+          "no_init_array_state_count": 2
+        }
+      },
+      "same_backend_constant_ub_observations": {
+        "fixed": {
+          "observed_freed_byte": [
+            136
+          ],
+          "observed_freed_word": [
+            1234605616436530568
+          ]
+        },
+        "varying": {
+          "observed_freed_byte": [
+            136
+          ],
+          "observed_freed_word": [
+            1234605616436530568
+          ]
+        }
+      },
+      "ub_comparison_is_c_safety_proof": false
+    },
+    {
+      "case": "T8_free_ub",
+      "architecture": "32",
+      "array": "bv",
+      "model_sha256": "39b4eac5f00919bc1215a9990dd4a02c9060517463ec05e8cb9d9a506b7de43b",
+      "map_sha256": "4c60fbb4c7c455c6959b8e495d0880a2a30e5b4ffb151628378e894415c1b701",
+      "traces": {
+        "fixed": {
+          "source_assertion_execution_frames": {
+            "main.assertion.1": [
+              53
+            ]
+          },
+          "source_failure_frames": {
+            "main.assertion.1": []
+          },
+          "valid_prefix_frames": 513,
+          "first_constraint_violation_frame": null,
+          "no_init_array_state_count": 0
+        },
+        "varying": {
+          "source_assertion_execution_frames": {
+            "main.assertion.1": [
+              54
+            ]
+          },
+          "source_failure_frames": {
+            "main.assertion.1": []
+          },
+          "valid_prefix_frames": 513,
+          "first_constraint_violation_frame": null,
+          "no_init_array_state_count": 0
+        }
+      },
+      "same_backend_constant_ub_observations": {
+        "fixed": {
+          "observed_freed_byte": [
+            136
+          ],
+          "observed_freed_word": [
+            1234605616436530568
+          ]
+        },
+        "varying": {
+          "observed_freed_byte": [
+            136
+          ],
+          "observed_freed_word": [
+            1234605616436530568
+          ]
+        }
+      },
+      "ub_comparison_is_c_safety_proof": false
+    },
+    {
+      "case": "T8_free_ub",
+      "architecture": "32",
+      "array": "mixed",
+      "model_sha256": "038768734419f6bac9b37caf3f42f082d039e648766f28e9b30aa2607bc12d96",
+      "map_sha256": "507a7158401df423ed3097cb7f56cdf831f10c0ba13c32a89a1bc839c9d37dec",
+      "traces": {
+        "fixed": {
+          "source_assertion_execution_frames": {
+            "main.assertion.1": [
+              53
+            ]
+          },
+          "source_failure_frames": {
+            "main.assertion.1": []
+          },
+          "valid_prefix_frames": 513,
+          "first_constraint_violation_frame": null,
+          "no_init_array_state_count": 0
+        },
+        "varying": {
+          "source_assertion_execution_frames": {
+            "main.assertion.1": [
+              54
+            ]
+          },
+          "source_failure_frames": {
+            "main.assertion.1": []
+          },
+          "valid_prefix_frames": 513,
+          "first_constraint_violation_frame": null,
+          "no_init_array_state_count": 0
+        }
+      },
+      "same_backend_constant_ub_observations": {
+        "fixed": {
+          "observed_freed_byte": [
+            136
+          ],
+          "observed_freed_word": [
+            1234605616436530568
+          ]
+        },
+        "varying": {
+          "observed_freed_byte": [
+            136
+          ],
+          "observed_freed_word": [
+            1234605616436530568
+          ]
+        }
+      },
+      "ub_comparison_is_c_safety_proof": false
+    },
+    {
+      "case": "T8_free_ub",
+      "architecture": "64",
+      "array": "array",
+      "model_sha256": "e06d4ea7fd90fc9b53ba34671f70b896adf5773fa5d90f497560015363dfe9c3",
+      "map_sha256": "55b6ab04d960334c2bea8c32ae750881c99f42ab1f4b39b320310921348a8c8b",
+      "traces": {
+        "fixed": {
+          "source_assertion_execution_frames": {
+            "main.assertion.1": [
+              53
+            ]
+          },
+          "source_failure_frames": {
+            "main.assertion.1": []
+          },
+          "valid_prefix_frames": 513,
+          "first_constraint_violation_frame": null,
+          "no_init_array_state_count": 2
+        },
+        "varying": {
+          "source_assertion_execution_frames": {
+            "main.assertion.1": [
+              54
+            ]
+          },
+          "source_failure_frames": {
+            "main.assertion.1": []
+          },
+          "valid_prefix_frames": 513,
+          "first_constraint_violation_frame": null,
+          "no_init_array_state_count": 2
+        }
+      },
+      "same_backend_constant_ub_observations": {
+        "fixed": {
+          "observed_freed_byte": [
+            136
+          ],
+          "observed_freed_word": [
+            1234605616436530568
+          ]
+        },
+        "varying": {
+          "observed_freed_byte": [
+            136
+          ],
+          "observed_freed_word": [
+            1234605616436530568
+          ]
+        }
+      },
+      "ub_comparison_is_c_safety_proof": false
+    },
+    {
+      "case": "T8_free_ub",
+      "architecture": "64",
+      "array": "bv",
+      "model_sha256": "a82276fb8d7ad19f21498a62de4f3e63282ee76c06ab9fd9e45de25f89b8e1cb",
+      "map_sha256": "1fe8ed8a77120cfb389e3c940d9bf4d9d0965cd1edce52867c7912cd72aac84a",
+      "traces": {
+        "fixed": {
+          "source_assertion_execution_frames": {
+            "main.assertion.1": [
+              53
+            ]
+          },
+          "source_failure_frames": {
+            "main.assertion.1": []
+          },
+          "valid_prefix_frames": 513,
+          "first_constraint_violation_frame": null,
+          "no_init_array_state_count": 0
+        },
+        "varying": {
+          "source_assertion_execution_frames": {
+            "main.assertion.1": [
+              54
+            ]
+          },
+          "source_failure_frames": {
+            "main.assertion.1": []
+          },
+          "valid_prefix_frames": 513,
+          "first_constraint_violation_frame": null,
+          "no_init_array_state_count": 0
+        }
+      },
+      "same_backend_constant_ub_observations": {
+        "fixed": {
+          "observed_freed_byte": [
+            136
+          ],
+          "observed_freed_word": [
+            1234605616436530568
+          ]
+        },
+        "varying": {
+          "observed_freed_byte": [
+            136
+          ],
+          "observed_freed_word": [
+            1234605616436530568
+          ]
+        }
+      },
+      "ub_comparison_is_c_safety_proof": false
+    },
+    {
+      "case": "T8_free_ub",
+      "architecture": "64",
+      "array": "mixed",
+      "model_sha256": "f2decedaf77a48288c048ececbe37920aa0d936a2e3a71eee08708b537d28fbf",
+      "map_sha256": "c4eb9a2939ae939919edb19b519375c60965615c853abf9068c19c7c590b787c",
+      "traces": {
+        "fixed": {
+          "source_assertion_execution_frames": {
+            "main.assertion.1": [
+              53
+            ]
+          },
+          "source_failure_frames": {
+            "main.assertion.1": []
+          },
+          "valid_prefix_frames": 513,
+          "first_constraint_violation_frame": null,
+          "no_init_array_state_count": 0
+        },
+        "varying": {
+          "source_assertion_execution_frames": {
+            "main.assertion.1": [
+              54
+            ]
+          },
+          "source_failure_frames": {
+            "main.assertion.1": []
+          },
+          "valid_prefix_frames": 513,
+          "first_constraint_violation_frame": null,
+          "no_init_array_state_count": 0
+        }
+      },
+      "same_backend_constant_ub_observations": {
+        "fixed": {
+          "observed_freed_byte": [
+            136
+          ],
+          "observed_freed_word": [
+            1234605616436530568
+          ]
+        },
+        "varying": {
+          "observed_freed_byte": [
+            136
+          ],
+          "observed_freed_word": [
+            1234605616436530568
+          ]
+        }
+      },
+      "ub_comparison_is_c_safety_proof": false
+    }
+  ],
+  "validation_failures": []
+}

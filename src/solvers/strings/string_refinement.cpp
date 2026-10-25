@@ -1107,8 +1107,9 @@ static exprt get_char_array_and_concretize(
         const auto array_expr =
           expr_try_dynamic_cast<array_exprt>(*concretized_array))
       {
-        stream << std::string(4, ' ') << "- as_string: \""
-               << string_of_array(*array_expr) << "\"\n";
+        stream << std::string(4, ' ')
+               << "- as_string: " << messaget::quote_begin
+               << string_of_array(*array_expr) << messaget::quote_end << '\n';
       }
       else
         stream << std::string(2, ' ') << "- warning: not an array"
@@ -1145,8 +1146,8 @@ void debug_model(
 
   for(const auto &symbol : symbols)
   {
-    stream << " - " << symbol.get_identifier() << ": "
-           << format(super_get(symbol)) << '\n';
+    stream << " - " << symbol.identifier() << ": " << format(super_get(symbol))
+           << '\n';
   }
   stream << messaget::eom;
 }
@@ -1451,7 +1452,7 @@ static std::pair<bool, std::vector<exprt>> check_axioms(
         ns, negated_axiom, univ_var, stream.message.get_message_handler()))
     {
       stream << std::string(4, ' ')
-             << "- violated_for: " << univ_var.get_identifier() << "="
+             << "- violated_for: " << univ_var.identifier() << "="
              << format(*witness) << messaget::eom;
       violated_not_contains[i] = *witness;
     }

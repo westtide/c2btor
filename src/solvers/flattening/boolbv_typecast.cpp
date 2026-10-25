@@ -128,7 +128,7 @@ bool boolbvt::type_conversion(
       src_bvtype == bvtypet::IS_C_BOOL) // unsigned to range
     {
       // need to do arithmetic: add -dest_from
-      mp_integer offset = -to_range_type(dest_type).get_from();
+      mp_integer offset = -to_integer_range_type(dest_type).from();
       dest = bv_utils.add(
         bv_utils.zero_extension(src, dest_width),
         bv_utils.build_constant(offset, dest_width));
@@ -138,7 +138,7 @@ bool boolbvt::type_conversion(
     else if(src_bvtype == bvtypet::IS_SIGNED) // signed to range
     {
       // need to do arithmetic: add -dest_from
-      mp_integer offset = -to_range_type(dest_type).get_from();
+      mp_integer offset = -to_integer_range_type(dest_type).from();
       dest = bv_utils.add(
         bv_utils.sign_extension(src, dest_width),
         bv_utils.build_constant(offset, dest_width));
@@ -147,8 +147,8 @@ bool boolbvt::type_conversion(
     }
     else if(src_bvtype == bvtypet::IS_RANGE) // range to range
     {
-      mp_integer src_from = to_range_type(src_type).get_from();
-      mp_integer dest_from = to_range_type(dest_type).get_from();
+      mp_integer src_from = to_integer_range_type(src_type).from();
+      mp_integer dest_from = to_integer_range_type(dest_type).from();
 
       // need to do arithmetic: add src_from-dest_from
       mp_integer offset = src_from - dest_from;
@@ -161,7 +161,7 @@ bool boolbvt::type_conversion(
     else if(src_type.id() == ID_bool) // bool to range
     {
       // need to do arithmetic: add -dest_from
-      mp_integer offset = -to_range_type(dest_type).get_from();
+      mp_integer offset = -to_integer_range_type(dest_type).from();
       dest = bv_utils.add(
         bv_utils.zero_extension(src, dest_width),
         bv_utils.build_constant(offset, dest_width));
@@ -637,7 +637,21 @@ literalt boolbvt::convert_typecast(const typecast_exprt &expr)
   const bvt &bv = convert_bv(expr.op());
 
   if(!bv.empty())
+  {
+    // For a floating-point source, casting to bool yields "value is non-zero",
+    // and -0 must count as zero even though its sign bit is set. Mask the sign
+    // via float_utilst::is_zero rather than OR-ing all bits together. This
+    // mirrors the IS_C_BOOL (_Bool) destination case in type_conversion.
+    if(expr.op().type().id() == ID_floatbv)
+    {
+      float_utilst float_utils(prop, to_floatbv_type(expr.op().type()));
+      return !float_utils.is_zero(bv);
+    }
+
+    // Other bitvector sources (fixedbv, integers, ...) intentionally fall
+    // through: they have no -0, so OR-ing all bits is a correct non-zero test.
     return prop.lor(bv);
+  }
 
   return SUB::convert_rest(expr);
 }

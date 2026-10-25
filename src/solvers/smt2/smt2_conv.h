@@ -30,6 +30,7 @@ Author: Daniel Kroening, kroening@kroening.com
 
 #include "letify.h"
 
+class floatbv_fma_exprt;
 class floatbv_typecast_exprt;
 class ieee_float_op_exprt;
 class floatbv_round_to_integral_exprt;
@@ -46,8 +47,6 @@ public:
     BITWUZLA,
     BOOLECTOR,
     CPROVER_SMT2,
-    CVC3,
-    CVC4,
     CVC5,
     MATHSAT,
     YICES,
@@ -64,13 +63,13 @@ public:
 
   ~smt2_convt() override = default;
 
-  bool use_FPA_theory;
-  bool use_array_of_bool;
-  bool use_as_const;
-  bool use_check_sat_assuming;
-  bool use_datatypes;
-  bool use_lambda_for_array;
-  bool emit_set_logic;
+  bool use_FPA_theory = false;
+  bool use_array_of_bool = false;
+  bool use_as_const = false;
+  bool use_check_sat_assuming = false;
+  bool use_datatypes = false;
+  bool use_lambda_for_array = false;
+  bool emit_set_logic = true;
 
   exprt handle(const exprt &expr) override;
   void set_to(const exprt &expr, bool value) override;
@@ -146,6 +145,7 @@ protected:
   void convert_floatbv_div(const ieee_float_op_exprt &expr);
   void convert_floatbv_mult(const ieee_float_op_exprt &expr);
   void convert_floatbv_rem(const binary_exprt &expr);
+  void convert_floatbv_fma(const floatbv_fma_exprt &expr);
   void
   convert_floatbv_round_to_integral(const floatbv_round_to_integral_exprt &);
   void convert_mod(const mod_exprt &expr);

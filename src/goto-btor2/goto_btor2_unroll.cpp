@@ -1,18 +1,25 @@
+// SPDX-License-Identifier: BSD-4-Clause
+// SPDX-FileCopyrightText: 2026 C2BTOR contributors
+
 /*******************************************************************\
 
 Module: Goto 程序常量界循环展开 - 实现
 
-Author: Based on CBMC project
+Authors: C2BTOR contributors; CBMC attribution is retained in LICENSES/
 
 \*******************************************************************/
 
 #include "goto_btor2_unroll.h"
+#include "memory_capacity.h"
 
 #include <util/arith_tools.h>
+#include <util/expr_util.h>
+#include <util/find_symbols.h>
 #include <util/bitvector_types.h>
 #include <util/irep_ids.h>
 #include <util/namespace.h>
 #include <util/pointer_offset_size.h>
+#include <util/pointer_expr.h>
 #include <util/simplify_expr.h>
 #include <util/std_expr.h>
 #include <util/std_code.h>
@@ -32,8 +39,6 @@ Author: Based on CBMC project
 namespace
 {
 
-constexpr std::size_t MAX_UNROLL_K = 64;
-
 bool is_alloc_call(const goto_programt::instructiont &instr)
 {
   if(instr.is_function_call())
@@ -44,9 +49,8 @@ bool is_alloc_call(const goto_programt::instructiont &instr)
       fid = to_symbol_expr(function).get_identifier();
     else if(function.id() == ID_address_of)
     {
-      const exprt &obj = function.operands().empty()
-                           ? nil_exprt()
-                           : function.operands()[0];
+      const exprt &obj =
+        function.operands().empty() ? nil_exprt() : function.operands()[0];
       if(obj.id() == ID_symbol)
         fid = to_symbol_expr(obj).get_identifier();
     }
@@ -79,6 +83,13 @@ bool is_alloc_call(const goto_programt::instructiont &instr)
 
 std::optional<mp_integer> as_integer(const exprt &e)
 {
+  if(e.id() == ID_unary_minus)
+  {
+    auto v = as_integer(to_unary_minus_expr(e).op());
+    if(v.has_value())
+      return -*v;
+    return std::nullopt;
+  }
   if(e.is_constant())
   {
     mp_integer v;
@@ -117,8 +128,9 @@ std::map<irep_idt, mp_integer> collect_constants(
     const auto &rhs = ins.assign_rhs();
     if(auto value = as_integer(rhs))
       known[id] = *value;
-    else if(rhs.id() == ID_symbol &&
-            known.count(to_symbol_expr(rhs).get_identifier()))
+    else if(
+      rhs.id() == ID_symbol &&
+      known.count(to_symbol_expr(rhs).get_identifier()))
       known[id] = known.at(to_symbol_expr(rhs).get_identifier());
     else
       known.erase(id);
@@ -128,381 +140,330 @@ std::map<irep_idt, mp_integer> collect_constants(
 
 struct parsed_guardt
 {
-  irep_idt var;
-  irep_idt op;
-  mp_integer threshold;
+  irep_idt var, op;
+  exprt threshold;
 };
 
-std::optional<parsed_guardt> parse_guard(const exprt &guard)
+std::vector<parsed_guardt> parse_guard(const exprt &guard)
 {
-  if(guard.id() != ID_gt && guard.id() != ID_ge &&
-     guard.id() != ID_lt && guard.id() != ID_le)
-    return std::nullopt;
-  const auto &g = to_binary_expr(guard);
-  parsed_guardt r;
-  r.op = g.id();
-  if(g.op0().id() == ID_symbol && g.op1().is_constant())
+  exprt relation = guard;
+  bool negated = false;
+  if(relation.id() == ID_not)
   {
-    r.var = to_symbol_expr(g.op0()).get_identifier();
-    mp_integer v;
-    if(to_integer(to_constant_expr(g.op1()), v))
-      return std::nullopt;
-    r.threshold = v;
-    return r;
+    relation = to_not_expr(relation).op();
+    negated = true;
   }
-  if(g.op1().id() == ID_symbol && g.op0().is_constant())
-  {
-    static const std::map<irep_idt, irep_idt> flip = {
-      {ID_gt, ID_lt},
-      {ID_lt, ID_gt},
-      {ID_ge, ID_le},
-      {ID_le, ID_ge},
-    };
-    r.var = to_symbol_expr(g.op1()).get_identifier();
-    r.op = flip.at(g.id());
-    mp_integer v;
-    if(to_integer(to_constant_expr(g.op0()), v))
-      return std::nullopt;
-    r.threshold = v;
-    return r;
-  }
-  return std::nullopt;
+  static const std::map<irep_idt, irep_idt> negate = {
+    {ID_gt, ID_le}, {ID_le, ID_gt}, {ID_lt, ID_ge}, {ID_ge, ID_lt}};
+  static const std::map<irep_idt, irep_idt> swap = {
+    {ID_gt, ID_lt}, {ID_lt, ID_gt}, {ID_ge, ID_le}, {ID_le, ID_ge}};
+  if(!negate.count(relation.id()))
+    return {};
+  const auto &g = to_binary_expr(relation);
+  const auto op = negated ? negate.at(g.id()) : g.id();
+  std::vector<parsed_guardt> candidates;
+  if(g.op0().id() == ID_symbol)
+    candidates.push_back(
+      {to_symbol_expr(g.op0()).get_identifier(), op, g.op1()});
+  if(g.op1().id() == ID_symbol)
+    candidates.push_back(
+      {to_symbol_expr(g.op1()).get_identifier(), swap.at(op), g.op0()});
+  return candidates;
 }
 
-std::optional<mp_integer> find_induction_step(
-  const std::vector<const goto_programt::instructiont *> &body,
+std::optional<mp_integer> induction_delta(
+  const goto_programt::instructiont &instruction,
   const irep_idt &var)
 {
-  int writes = 0;
-  mp_integer step = 0;
-  for(const auto *ins : body)
+  if(
+    !instruction.is_assign() || instruction.assign_lhs().id() != ID_symbol ||
+    to_symbol_expr(instruction.assign_lhs()).get_identifier() != var)
+    return mp_integer(0);
+  const auto &rhs = instruction.assign_rhs();
+  if(
+    (rhs.id() != ID_plus && rhs.id() != ID_minus) || rhs.operands().size() != 2)
+    return {};
+  const auto &left = rhs.operands()[0], &right = rhs.operands()[1];
+  if(left.id() == ID_symbol && to_symbol_expr(left).get_identifier() == var)
   {
-    if(!ins->is_assign())
-      continue;
-    const exprt &lhs = ins->assign_lhs();
-    if(lhs.id() != ID_symbol)
-      continue;
-    if(to_symbol_expr(lhs).get_identifier() != var)
-      continue;
-    writes++;
-    const exprt &rhs = ins->assign_rhs();
-    if(rhs.id() != ID_plus && rhs.id() != ID_minus)
-      return std::nullopt;
-    const auto &ops_r = rhs.operands();
-    if(ops_r.size() != 2)
-      return std::nullopt;
-    const exprt *cst = nullptr;
-    int sym_count = 0;
-    for(const auto &op : ops_r)
-    {
-      if(op.id() == ID_symbol &&
-         to_symbol_expr(op).get_identifier() == var)
-        sym_count++;
-      else if(as_integer(op).has_value())
-        cst = &op;
-    }
-    if(sym_count != 1 || !cst ||
-       (rhs.id() == ID_minus && ops_r[0].id() != ID_symbol))
-      return std::nullopt;
-    auto delta = *as_integer(*cst);
-    mp_integer this_step = rhs.id() == ID_plus ? delta : -delta;
-    if(this_step == 0)
-      return std::nullopt;
-    step = this_step;
+    const auto delta = as_integer(right);
+    if(delta)
+      return rhs.id() == ID_minus ? -*delta : *delta;
   }
-  if(writes != 1)
-    return std::nullopt;
-  return step;
+  if(
+    rhs.id() == ID_plus && right.id() == ID_symbol &&
+    to_symbol_expr(right).get_identifier() == var)
+    return as_integer(left);
+  return {};
 }
 
-mp_integer compute_K(const parsed_guardt &g, mp_integer init, mp_integer step)
+std::optional<mp_integer> trip_bound(
+  const parsed_guardt &guard,
+  const mp_integer &threshold,
+  const mp_integer &initial,
+  const mp_integer &minimum_step)
 {
-  if(step == 0)
-    return 0;
-  mp_integer v = init;
-  mp_integer k = 0;
-  const mp_integer cap = static_cast<mp_integer>(MAX_UNROLL_K) + 1;
-  while(k <= cap)
+  // Mathematical division gives the complete bound without enumerating trips.
+  // The caller separately proves that all machine updates remain in range.
+  if(guard.op == ID_lt || guard.op == ID_le)
   {
-    bool cont;
-    if(g.op == ID_gt)
-      cont = v > g.threshold;
-    else if(g.op == ID_ge)
-      cont = v >= g.threshold;
-    else if(g.op == ID_lt)
-      cont = v < g.threshold;
-    else
-      cont = v <= g.threshold;
-    if(!cont)
-      break;
-    v += step;
-    ++k;
+    if(initial > threshold || (initial == threshold && guard.op == ID_lt))
+      return mp_integer(0);
+    if(minimum_step <= 0)
+      return {};
+    const mp_integer distance =
+      threshold - initial + (guard.op == ID_le ? 1 : 0);
+    return (distance + minimum_step - 1) / minimum_step;
   }
-  return k;
+  if(initial < threshold || (initial == threshold && guard.op == ID_gt))
+    return mp_integer(0);
+  if(minimum_step >= 0)
+    return {};
+  const mp_integer stride = -minimum_step;
+  const mp_integer distance = initial - threshold + (guard.op == ID_ge ? 1 : 0);
+  return (distance + stride - 1) / stride;
 }
 
 } // namespace
 
-//===========================================================================
-
-std::size_t unroll_malloc_counted_loops(goto_modelt &goto_model, messaget &log)
+std::size_t unroll_malloc_counted_loops(
+  goto_programt &program,
+  const namespacet &ns,
+  messaget &log)
 {
-  auto &fn_map = goto_model.goto_functions.function_map;
-  auto fit = fn_map.find(ID_main);
-  if(fit == fn_map.end())
-    return 0;
-  goto_programt &program = fit->second.body;
-  namespacet ns(goto_model.symbol_table);
-
   std::size_t total = 0;
-  for(int pass = 0; pass < 8; ++pass)
+  // Intervals and alias facts must describe the original sizing CFG. Re-running
+  // after cutting a loop could underestimate values modified by that loop.
+  const auto bounds = infer_memory_capacity(program, ns, {}, true);
+  for(;;)
   {
-    // 顺序 + 地址->位置
-    std::vector<const goto_programt::instructiont *> order;
-    order.reserve(program.instructions.size());
-    std::map<const goto_programt::instructiont *, std::size_t> pos_of;
-    std::size_t idx = 0;
-    for(const auto &ins : program.instructions)
+    std::vector<goto_programt::targett> order;
+    std::vector<const goto_programt::instructiont *> instructions;
+    std::map<const goto_programt::instructiont *, std::size_t> positions;
+    for(auto pc = program.instructions.begin();
+        pc != program.instructions.end();
+        ++pc)
     {
-      order.push_back(&ins);
-      pos_of[&ins] = idx++;
+      positions.emplace(&*pc, order.size());
+      order.push_back(pc);
+      instructions.push_back(&*pc);
     }
-    const std::size_t n = order.size();
-    if(n == 0)
-      break;
-
-    // 找可展开循环
-    bool found = false;
-    std::size_t head_pos = 0, back_pos = 0, exit_pos = 0;
-    mp_integer K = 0;
-    parsed_guardt pg{};
-
-    for(std::size_t j = 0; j < n && !found; ++j)
+    bool summarized = false;
+    for(std::size_t back = 0; back < order.size() && !summarized; ++back)
     {
-      const auto *b = order[j];
-      if(!b->is_goto() || !b->condition().is_true() || b->targets.empty())
+      const auto &edge = *order[back];
+      if(
+        !edge.is_goto() || !edge.condition().is_true() ||
+        edge.targets.size() != 1)
         continue;
-      auto pit = pos_of.find(&*b->targets.front());
-      if(pit == pos_of.end())
+      const auto head = positions.at(&*edge.get_target());
+      if(head >= back || back + 1 >= order.size())
         continue;
-      std::size_t head = pit->second;
-      if(head >= j)
+      const auto &header = *order[head];
+      if(
+        !header.is_goto() || header.condition().is_true() ||
+        header.targets.size() != 1 ||
+        positions.at(&*header.get_target()) != back + 1)
         continue;
-      const auto *h = order[head];
-      if(!h->is_goto() || h->condition().is_true() || h->targets.empty())
+      if(!std::any_of(
+           instructions.begin() + head + 1,
+           instructions.begin() + back,
+           [](const auto *instruction) { return is_alloc_call(*instruction); }))
         continue;
-      auto eit = pos_of.find(&*h->targets.front());
-      if(eit == pos_of.end())
-        continue;
-      std::size_t exit_p = eit->second;
-      if(exit_p != j + 1)
-        continue;
-      std::vector<const goto_programt::instructiont *> body(
-        order.begin() + head + 1, order.begin() + j);
-      if(!std::any_of(body.begin(), body.end(),
-                      [](const auto *p) { return is_alloc_call(*p); }))
-        continue;
-
-      exprt cont = not_exprt(h->condition());
-      simplify(cont, ns);
-      auto pgg = parse_guard(cont);
-      if(!pgg)
-        continue;
-      auto step_opt = find_induction_step(body, pgg->var);
-      if(!step_opt)
-        continue;
-      auto known = collect_constants(order, head);
-      auto vit = known.find(pgg->var);
-      if(vit == known.end())
-        continue;
-      mp_integer k = compute_K(*pgg, vit->second, *step_opt);
-      if(k < 1 || k > static_cast<mp_integer>(MAX_UNROLL_K))
-        continue;
-
-      // The induction variable must not wrap, be address-taken, or have its
-      // increment bypassed on a path that reaches the back edge. Skip complex
-      // loops rather than guessing a finite bound and truncating executions.
-      const auto &var_type = ns.lookup(pgg->var).type;
-      if(var_type.id() != ID_signedbv && var_type.id() != ID_unsignedbv)
-        continue;
-      const auto &bv_type = to_integer_bitvector_type(var_type);
-      const auto final_value = vit->second + k * *step_opt;
-      if(vit->second < bv_type.smallest() || vit->second > bv_type.largest() ||
-         final_value < bv_type.smallest() || final_value > bv_type.largest())
-        continue;
-      bool simple = true;
-      std::size_t increment = head;
-      for(std::size_t i = head + 1; i < j; ++i)
-        if(order[i]->is_assign() && order[i]->assign_lhs().id() == ID_symbol &&
-           to_symbol_expr(order[i]->assign_lhs()).get_identifier() == pgg->var)
-          increment = i;
-      std::function<void(const exprt &, bool)> check_address =
-        [&](const exprt &e, bool addressed) {
-          addressed = addressed || e.id() == ID_address_of;
-          if(addressed && e.id() == ID_symbol &&
-             to_symbol_expr(e).get_identifier() == pgg->var)
-            simple = false;
-          for(const auto &op : e.operands())
-            check_address(op, addressed);
-        };
-      for(std::size_t i = 0; i < n; ++i)
+      // Internal zero-allocation cycles need no trip bound. They remain in the
+      // sizing CFG; allocation-count dataflow crosses them without growth.
+      std::vector<std::vector<std::size_t>> successors(order.size()),
+        predecessors(order.size());
+      bool single_entry = true;
+      for(std::size_t i = 0; i < order.size(); ++i)
       {
-        check_address(order[i]->code(), false);
-        if(order[i]->has_condition())
-          check_address(order[i]->condition(), false);
-        if(i > head && i < j)
-        {
-          if(order[i]->is_function_call() || order[i]->is_other())
-            simple = false;
-          if(order[i]->is_decl() &&
-             order[i]->decl_symbol().get_identifier() == pgg->var)
-            simple = false;
-          if(order[i]->is_dead() &&
-             order[i]->dead_symbol().get_identifier() == pgg->var)
-            simple = false;
-        }
         for(const auto &target : order[i]->targets)
         {
-          const auto tp = pos_of.at(&*target);
-          if(i <= head || i > j)
+          const auto to = positions.at(&*target);
+          if((i <= head || i > back) && to >= head && to <= back)
+            single_entry = false;
+          if(i > head && i < back && to == head)
+            single_entry =
+              false; // additional outer back edge needs its own certificate
+        }
+        if(i <= head || i >= back)
+          continue;
+        for(const auto next : program.get_successors(order[i]))
+        {
+          const auto to = positions.at(&*next);
+          if(to > head && to <= back)
           {
-            if(tp > head && tp <= j)
-              simple = false; // external entry into the body
-          }
-          else if(i < j && tp >= head && tp <= j)
-          {
-            if(tp <= i || (i < increment && tp > increment))
-              simple = false; // nested cycle or bypass of increment
+            successors[i].push_back(to);
+            predecessors[to].push_back(i);
           }
         }
       }
-      if(!simple)
+      if(!single_entry)
         continue;
-
-      head_pos = head;
-      back_pos = j;
-      exit_pos = exit_p;
-      K = k;
-      pg = *pgg;
-      found = true;
-    }
-    if(!found)
-      break;
-
-    const std::size_t Ksize = static_cast<std::size_t>(K.to_long());
-
-    // 捕获每条原始指令的目标位置（清空前）
-    std::vector<std::vector<std::size_t>> orig_targets(n);
-    for(std::size_t i = 0; i < n; ++i)
-    {
-      for(const auto &t : order[i]->targets)
+      std::vector<bool> reaches_back(order.size(), false);
+      std::vector<std::size_t> pending{back};
+      reaches_back[back] = true;
+      while(!pending.empty())
       {
-        auto it = pos_of.find(&*t);
-        if(it != pos_of.end())
-          orig_targets[i].push_back(it->second);
-      }
-    }
-
-    // 构建 prog2
-    goto_programt prog2;
-    enum Kt
-    {
-      KEPT,
-      HEAD_COPY,
-      BODY_COPY
-    };
-    struct Meta
-    {
-      Kt kind;
-      std::size_t orig_pos;
-      std::size_t copy_i;
-    };
-    std::vector<goto_programt::targett> new_iters;
-    std::vector<Meta> metas;
-    std::map<std::size_t, goto_programt::targett> kept_map;
-    std::map<std::size_t, goto_programt::targett> head_map;
-    std::map<std::pair<std::size_t, std::size_t>, goto_programt::targett>
-      body_map;
-
-    auto append = [&](std::size_t i, std::size_t ci, Kt kind) {
-      goto_programt::instructiont copy = *order[i];
-      copy.targets.clear();
-      copy.incoming_edges.clear();
-      auto t = prog2.add(std::move(copy));
-      new_iters.push_back(t);
-      metas.push_back({kind, i, ci});
-      if(kind == KEPT)
-        kept_map[i] = t;
-      else if(kind == HEAD_COPY)
-        head_map[ci] = t;
-      else
-        body_map[{i, ci}] = t;
-    };
-    for(std::size_t i = 0; i < head_pos; ++i)
-      append(i, 0, KEPT);
-    // Copy whole iterations in execution order, not each instruction K times.
-    for(std::size_t ci = 0; ci < Ksize; ++ci)
-    {
-      append(head_pos, ci, HEAD_COPY);
-      for(std::size_t i = head_pos + 1; i < back_pos; ++i)
-        append(i, ci, BODY_COPY);
-    }
-    for(std::size_t i = back_pos + 1; i < n; ++i)
-      append(i, 0, KEPT);
-
-    // 重接 targets
-    for(std::size_t k = 0; k < new_iters.size(); ++k)
-    {
-      if(!new_iters[k]->is_goto() && !new_iters[k]->is_incomplete_goto())
-        continue;
-      const auto &m = metas[k];
-      for(std::size_t tp : orig_targets[m.orig_pos])
-      {
-        goto_programt::targett resolved;
-        bool ok = false;
-        if(tp > head_pos && tp < back_pos)
-        {
-          // body 内：同 copy
-          auto it = body_map.find({tp, m.copy_i});
-          if(it != body_map.end())
+        const auto node = pending.back();
+        pending.pop_back();
+        for(const auto before : predecessors[node])
+          if(!reaches_back[before])
           {
-            resolved = it->second;
-            ok = true;
+            reaches_back[before] = true;
+            pending.push_back(before);
+          }
+      }
+      exprt continuation = simplify_expr(not_exprt(header.condition()), ns);
+      for(const auto &guard : parse_guard(continuation))
+      {
+        const auto known = collect_constants(instructions, head);
+        const auto initial = known.find(guard.var);
+        const auto &type = ns.lookup(guard.var).type;
+        if(
+          initial == known.end() ||
+          (type.id() != ID_signedbv && type.id() != ID_unsignedbv))
+          continue;
+        std::optional<mp_integer> threshold = as_integer(guard.threshold);
+        if(!threshold)
+        {
+          const auto state = bounds.condition_intervals.find(&header);
+          if(state != bounds.condition_intervals.end())
+          {
+            const auto interval = state->second.find(guard.threshold);
+            if(interval != state->second.end())
+              threshold = guard.op == ID_lt || guard.op == ID_le
+                            ? interval->second.second
+                            : interval->second.first;
           }
         }
-        else if(tp == head_pos)
+        if(!threshold)
+          continue;
+        bool safe = true;
+        const bool increasing = guard.op == ID_lt || guard.op == ID_le;
+        std::vector<mp_integer> deltas(order.size(), 0);
+        for(std::size_t i = 0; i < order.size(); ++i)
         {
-          // An incoming edge from outside the loop starts at iteration zero.
-          resolved = head_map[0];
-          ok = true;
-        }
-        else if(tp == back_pos)
-        {
-          if(m.copy_i + 1 < Ksize)
-            resolved = head_map[m.copy_i + 1];
+          if(
+            has_subexpr(
+              order[i]->code(),
+              [&](const exprt &e)
+              {
+                return e.id() == ID_address_of &&
+                       has_symbol_expr(
+                         to_address_of_expr(e).object(), guard.var, true);
+              }) ||
+            (order[i]->has_condition() &&
+             has_subexpr(
+               order[i]->condition(),
+               [&](const exprt &e)
+               {
+                 return e.id() == ID_address_of &&
+                        has_symbol_expr(
+                          to_address_of_expr(e).object(), guard.var, true);
+               })))
+            safe = false;
+          if(i <= head || i >= back || !reaches_back[i])
+            continue;
+          if(bounds.unknown_indirect_writes.count(&*order[i]))
+            safe = false;
+          const auto delta = induction_delta(*order[i], guard.var);
+          if(!delta || (increasing ? *delta < 0 : *delta > 0))
+            safe = false;
           else
-            resolved = kept_map[exit_pos];
-          ok = true;
+            deltas[i] = increasing ? *delta : -*delta;
+          const bool memory_event =
+            order[i]->is_other() &&
+            (order[i]->get_other().get_statement() == "c2btor_deallocate" ||
+             order[i]->get_other().get_statement() == "c2btor_copy_check" ||
+             order[i]->get_other().get_statement() == "c2btor_copy_byte" ||
+             order[i]->get_other().get_statement() == "c2btor_copy_range");
+          // Inlining a discarded malloc result leaves a pure EXPRESSION.
+          // It observes the result without changing the induction state.
+          const bool pure_expression =
+            order[i]->is_other() &&
+            order[i]->get_other().get_statement() == ID_expression &&
+            !has_subexpr(
+              order[i]->code(),
+              [](const exprt &expr) { return expr.id() == ID_side_effect; });
+          if(
+            order[i]->is_function_call() ||
+            (order[i]->is_other() && !memory_event && !pure_expression) ||
+            (order[i]->is_decl() &&
+             order[i]->decl_symbol().get_identifier() == guard.var) ||
+            (order[i]->is_dead() &&
+             order[i]->dead_symbol().get_identifier() == guard.var))
+            safe = false;
         }
-        else
+        if(!safe)
+          continue;
+        // Every path returning to the outer header must progress. A positive
+        // update cycle has no finite maximum; zero-update inner cycles are OK.
+        std::vector<std::optional<mp_integer>> minimum(order.size()),
+          maximum(order.size());
+        minimum[head + 1] = maximum[head + 1] = 0;
+        bool changed = false;
+        for(std::size_t pass = head + 1; pass <= back; ++pass)
         {
-          auto it = kept_map.find(tp);
-          if(it != kept_map.end())
-          {
-            resolved = it->second;
-            ok = true;
-          }
+          changed = false;
+          for(std::size_t i = head + 1; i < back; ++i)
+            if(reaches_back[i] && minimum[i])
+              for(const auto next : successors[i])
+              {
+                const mp_integer lo = *minimum[i] + deltas[i];
+                const mp_integer hi = *maximum[i] + deltas[i];
+                if(!minimum[next] || lo < *minimum[next])
+                {
+                  minimum[next] = lo;
+                  changed = true;
+                }
+                if(!maximum[next] || hi > *maximum[next])
+                {
+                  maximum[next] = hi;
+                  changed = true;
+                }
+              }
+          if(!changed)
+            break;
         }
-        if(ok)
-          new_iters[k]->targets.push_back(resolved);
+        if(changed || !minimum[back] || *minimum[back] <= 0)
+          continue;
+        const mp_integer step = increasing ? *minimum[back] : -*minimum[back];
+        const auto trips = trip_bound(guard, *threshold, initial->second, step);
+        if(!trips)
+          continue;
+        const auto &machine = to_integer_bitvector_type(type);
+        const mp_integer final =
+          initial->second + (increasing ? 1 : -1) * *trips * *maximum[back];
+        if(
+          initial->second < machine.smallest() ||
+          initial->second > machine.largest() || final < machine.smallest() ||
+          final > machine.largest())
+          continue;
+        for(std::size_t i = head + 1; i < back; ++i)
+          if(allocation_evaluation_weight(*order[i]) != 0)
+          {
+            const auto old =
+              order[i]->code().get_string(C2BTOR_ALLOCATION_MULTIPLIER);
+            const mp_integer factor =
+              old.empty() ? mp_integer(1) : string2integer(old);
+            order[i]->code_nonconst().set(
+              C2BTOR_ALLOCATION_MULTIPLIER, integer2string(factor * *trips));
+          }
+        // This is exclusively an allocation-count overapproximation. Memory
+        // capacity is inferred from the original program, never this summary.
+        order[back]->turn_into_skip();
+        program.update();
+        ++total;
+        summarized = true;
+        log.status()
+          << "[capacity analysis] summarized counted allocation loop (K="
+          << *trips << ") around '" << guard.var << "'" << messaget::eom;
+        break;
       }
     }
-
-    prog2.update();
-    program.instructions.swap(prog2.instructions);
-    ++total;
-    log.status() << "[goto-btor2-unroll] unrolled a counted loop (K=" << Ksize
-                 << ") around '" << pg.var << "'" << messaget::eom;
+    if(!summarized)
+      break;
   }
   return total;
 }

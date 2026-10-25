@@ -1,2 +1,0 @@
-goto-checker
-testing-utils

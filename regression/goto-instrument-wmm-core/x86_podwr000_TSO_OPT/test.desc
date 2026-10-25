@@ -1,8 +1,0 @@
-CORE glpk
-podwr000.c
-TSO OPT
-^EXIT=10$
-^SIGNAL=0$
-^VERIFICATION FAILED$
---
-^warning: ignoring

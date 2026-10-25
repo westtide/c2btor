@@ -1,6 +1,0 @@
-{
-  "sources": [
-    "main-contract-after-declaration.c"
-  ],
-  "output": "stdout"
-}

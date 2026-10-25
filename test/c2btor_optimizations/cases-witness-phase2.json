@@ -1,0 +1,18 @@
+{
+  "scope": "Logical-array export/translate/offline-lint over a supplied fixed-input simulation prefix; no model checker or CPAchecker",
+  "cases": [
+    {
+      "name": "logical-array-witness",
+      "source": "phase2_witness_array.c",
+      "inputs": [5, 9],
+      "target": "reach_error",
+      "witness_roundtrip": true,
+      "export_spec": "unreach-call.prp",
+      "expected_map_version": "2",
+      "array_storage_checks": [
+        {"symbol_regex": "::values$", "logical_when_enabled": true,
+         "rank": 1, "element_width": 32}
+      ]
+    }
+  ]
+}

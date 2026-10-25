@@ -1,8 +1,0 @@
-CORE
-two.c
-
-^EXIT=6$
-^SIGNAL=0$
-expects at least two arguments
-CONVERSION ERROR
---

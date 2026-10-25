@@ -1,0 +1,16 @@
+"$id": "https://gitlab.com/sosy-lab/benchmarking/sv-witnesses/schemas/common/location"
+type: object
+required:
+- file_name
+- line
+properties:
+  file_name:
+    type: string
+  line:
+    type: integer
+    minimum: 1
+  column:
+    type: integer
+    minimum: 1
+  function:
+    type: string

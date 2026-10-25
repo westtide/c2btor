@@ -1,0 +1,68 @@
+{
+  "binary_sha256": "9b8afb66766c923638df9671ad328f5cade957373607ca93860018ae20aa7138",
+  "model_checking_run": false,
+  "backend_verdict": "NOT_RUN",
+  "original_cohort": 770,
+  "excluded_recursive": 4,
+  "eligible_cohort": 766,
+  "results": {
+    "native/array": {
+      "passed": 741,
+      "cases": 766,
+      "new_passes": 138,
+      "new_failures": [],
+      "source_hash_mismatches": [],
+      "failure_categories": {
+        "runtime_object_capacity": 5,
+        "no_selected_property": 1,
+        "automatic_lifetime": 18,
+        "allocation_count": 1
+      }
+    },
+    "native/mixed": {
+      "passed": 741,
+      "cases": 766,
+      "new_passes": 138,
+      "new_failures": [],
+      "source_hash_mismatches": [],
+      "failure_categories": {
+        "runtime_object_capacity": 5,
+        "no_selected_property": 1,
+        "automatic_lifetime": 18,
+        "allocation_count": 1
+      }
+    },
+    "native/bv": {
+      "passed": 553,
+      "cases": 766,
+      "new_passes": 0,
+      "new_failures": [],
+      "source_hash_mismatches": [],
+      "failure_categories": {
+        "packed_logical_array": 50,
+        "runtime_object_capacity": 5,
+        "packed_allocation_capacity": 138,
+        "no_selected_property": 1,
+        "automatic_lifetime": 18,
+        "allocation_count": 1
+      }
+    },
+    "bv-array-fallback/bv": {
+      "passed": 691,
+      "cases": 766,
+      "new_passes": 138,
+      "new_failures": [],
+      "source_hash_mismatches": [],
+      "failure_categories": {
+        "packed_logical_array": 50,
+        "runtime_object_capacity": 5,
+        "no_selected_property": 1,
+        "automatic_lifetime": 18,
+        "allocation_count": 1
+      }
+    }
+  },
+  "failed_csv": "failed-cases.csv",
+  "raw_run": "results/lab1-final",
+  "results_sha256": "d2bd929355d1062d471e5b64ad7454cfb6182450432831ecbb993f684412a8b6"
+}

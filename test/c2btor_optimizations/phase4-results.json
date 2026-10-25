@@ -1,0 +1,691 @@
+{
+  "stage": 4,
+  "switch": "--goto-btor2-array-blocks",
+  "default": "off",
+  "common_switches": [
+    "--goto-btor2-optimize-state",
+    "--goto-btor2-logical-arrays",
+    "--goto-btor2-scalar-blocks"
+  ],
+  "model_checking_run": false,
+  "solver_run": false,
+  "cpachecker_run": false,
+  "sample_scope": "Exact 770 deduplicated records file_path values, with raw counts retained and a separate nonrecursive 766 cohort",
+  "recursive_cases_excluded_from_secondary_cohort": [
+    "bitvector-regression/recHanoi03-1.c",
+    "loop-industry-pattern/ofuf_1.c",
+    "loop-industry-pattern/ofuf_2.c",
+    "loop-industry-pattern/ofuf_3.c"
+  ],
+  "no_selected_source_property_case": "array-examples/sanfoundry_43_ground.i",
+  "additional_dataset_manifest_tasks": [
+    "array-lopstr16/partial_lesser_bound-1.i",
+    "loop-industry-pattern/ofuf_4.c",
+    "loop-industry-pattern/ofuf_5.c"
+  ],
+  "tool": {
+    "path": "/Users/west/Developer/cbmc/test/c2btor_optimizations/results/phase4-reviewed-snapshot/c2btor",
+    "sha256": "e774ee3f997faca5c2ea80be738fa98339230d2732083807570a928721ea81db"
+  },
+  "tools": {
+    "before": {
+      "path": "/Users/west/Developer/cbmc/test/c2btor_optimizations/results/phase4-reviewed-snapshot/c2btor",
+      "sha256": "e774ee3f997faca5c2ea80be738fa98339230d2732083807570a928721ea81db"
+    },
+    "after": {
+      "path": "/Users/west/Developer/cbmc/test/c2btor_optimizations/results/phase4-reviewed-snapshot/c2btor",
+      "sha256": "e774ee3f997faca5c2ea80be738fa98339230d2732083807570a928721ea81db"
+    },
+    "catbtor": {
+      "path": "/Users/west/Developer/btor2tools/build/bin/catbtor",
+      "sha256": "548143c6cd8f6489e22c13c7d34b8301def3f7560df4b4fab5834b08ea306cc6"
+    }
+  },
+  "harness_sha256": "1d342aafff3132de71dc6b3bec9107f44e4451e9377d0128c6f40e2f3e0f30c5",
+  "harness_hash_unchanged": true,
+  "tool_hashes_unchanged": true,
+  "unit_tests": {
+    "assertions": 1582,
+    "test_cases": 73,
+    "scope": "[goto-btor2]",
+    "evidence": "results/phase4-reviewed-snapshot/c2btor-phase4-unit.log",
+    "log_sha256": "cc0275bba16266b00b6ff470d3b23fb4807eccf1cd308193f9c75fea58b22f87"
+  },
+  "finite_regressions": {
+    "passed": 180,
+    "model_parser_simulation_passed": 180,
+    "expected_representation_rejections": 0,
+    "exact_value_pairs_passed": 48,
+    "frames_requested": 2049,
+    "structural_checks_passed": true,
+    "scope": "Fixed-input prefixes; scalar/array state/type/boundary checks, latest stores, terminal ASSERT snapshots, and VLA capture/reentry; no safety proof"
+  },
+  "witness_roundtrips": {
+    "passed": 12,
+    "source_event_values": [
+      5,
+      9,
+      9
+    ],
+    "target_source_line": 13,
+    "solver_run": false,
+    "cpachecker_run": false,
+    "scope": "Hash-bound export, supplied fixed-input simulation, translate, offline lint"
+  },
+  "encodings": {
+    "bv": {
+      "common_success_tasks": 554,
+      "newly_converted_tasks": 0,
+      "newly_converted_file_paths": [],
+      "newly_converted_model_totals": {
+        "state_count": 0,
+        "bitvec_state_bits": 0,
+        "array_state_count": 0,
+        "instruction_positions": 0,
+        "pc_positions": 0,
+        "active_pc_entries": 0,
+        "pc_equality_guards": 0,
+        "numeric_nodes": 0,
+        "read_ops": 0,
+        "write_ops": 0,
+        "model_bytes": 0
+      },
+      "before": {
+        "all_770": {
+          "pass": 554,
+          "conversion_error": 216
+        },
+        "non_recursive_766": {
+          "pass": 553,
+          "conversion_error": 213
+        },
+        "successful_model_totals": {
+          "state_count": 5377,
+          "bitvec_state_bits": 3730420826,
+          "array_state_count": 0,
+          "instruction_positions": 107500,
+          "pc_positions": 28245,
+          "active_pc_entries": 28155,
+          "pc_equality_guards": 28883,
+          "numeric_nodes": 1340147,
+          "read_ops": 0,
+          "write_ops": 0,
+          "model_bytes": 29763358
+        },
+        "common_success_model_totals": {
+          "state_count": 5377,
+          "bitvec_state_bits": 3730420826,
+          "array_state_count": 0,
+          "instruction_positions": 107500,
+          "pc_positions": 28245,
+          "active_pc_entries": 28155,
+          "pc_equality_guards": 28883,
+          "numeric_nodes": 1340147,
+          "read_ops": 0,
+          "write_ops": 0,
+          "model_bytes": 29763358
+        },
+        "failure_taxonomy_all_770": {
+          "logical_array_packed_width_or_bound": 50,
+          "runtime_object_byte_capacity": 5,
+          "allocation_byte_capacity": 138,
+          "no_selected_source_property": 1,
+          "automatic_object_lifetime": 21,
+          "allocation_count": 1
+        },
+        "failure_taxonomy_nonrecursive_766": {
+          "logical_array_packed_width_or_bound": 50,
+          "runtime_object_byte_capacity": 5,
+          "allocation_byte_capacity": 138,
+          "no_selected_source_property": 1,
+          "automatic_object_lifetime": 18,
+          "allocation_count": 1
+        },
+        "successful_property_totals": {
+          "bad": 843,
+          "constraint": 728
+        },
+        "common_success_property_totals": {
+          "bad": 843,
+          "constraint": 728
+        }
+      },
+      "after": {
+        "all_770": {
+          "pass": 554,
+          "conversion_error": 216
+        },
+        "non_recursive_766": {
+          "pass": 553,
+          "conversion_error": 213
+        },
+        "successful_model_totals": {
+          "state_count": 5109,
+          "bitvec_state_bits": 3730412032,
+          "array_state_count": 0,
+          "instruction_positions": 107500,
+          "pc_positions": 25654,
+          "active_pc_entries": 25571,
+          "pc_equality_guards": 26299,
+          "numeric_nodes": 1333132,
+          "read_ops": 0,
+          "write_ops": 0,
+          "model_bytes": 29589443
+        },
+        "common_success_model_totals": {
+          "state_count": 5109,
+          "bitvec_state_bits": 3730412032,
+          "array_state_count": 0,
+          "instruction_positions": 107500,
+          "pc_positions": 25654,
+          "active_pc_entries": 25571,
+          "pc_equality_guards": 26299,
+          "numeric_nodes": 1333132,
+          "read_ops": 0,
+          "write_ops": 0,
+          "model_bytes": 29589443
+        },
+        "failure_taxonomy_all_770": {
+          "logical_array_packed_width_or_bound": 50,
+          "runtime_object_byte_capacity": 5,
+          "allocation_byte_capacity": 138,
+          "no_selected_source_property": 1,
+          "automatic_object_lifetime": 21,
+          "allocation_count": 1
+        },
+        "failure_taxonomy_nonrecursive_766": {
+          "logical_array_packed_width_or_bound": 50,
+          "runtime_object_byte_capacity": 5,
+          "allocation_byte_capacity": 138,
+          "no_selected_source_property": 1,
+          "automatic_object_lifetime": 18,
+          "allocation_count": 1
+        },
+        "successful_property_totals": {
+          "bad": 843,
+          "constraint": 728
+        },
+        "common_success_property_totals": {
+          "bad": 843,
+          "constraint": 728
+        }
+      },
+      "common_success_reductions_percent": {
+        "state_count": 4.9842,
+        "bitvec_state_bits": 0.0002,
+        "instruction_positions": 0.0,
+        "pc_positions": 9.1733,
+        "active_pc_entries": 9.1778,
+        "pc_equality_guards": 8.9464,
+        "numeric_nodes": 0.5235,
+        "model_bytes": 0.5843
+      }
+    },
+    "array": {
+      "common_success_tasks": 604,
+      "newly_converted_tasks": 0,
+      "newly_converted_file_paths": [],
+      "newly_converted_model_totals": {
+        "state_count": 0,
+        "bitvec_state_bits": 0,
+        "array_state_count": 0,
+        "instruction_positions": 0,
+        "pc_positions": 0,
+        "active_pc_entries": 0,
+        "pc_equality_guards": 0,
+        "numeric_nodes": 0,
+        "read_ops": 0,
+        "write_ops": 0,
+        "model_bytes": 0
+      },
+      "before": {
+        "all_770": {
+          "pass": 604,
+          "conversion_error": 166
+        },
+        "non_recursive_766": {
+          "pass": 603,
+          "conversion_error": 163
+        },
+        "successful_model_totals": {
+          "state_count": 5981,
+          "bitvec_state_bits": 154872,
+          "array_state_count": 558,
+          "instruction_positions": 110680,
+          "pc_positions": 29863,
+          "active_pc_entries": 29773,
+          "pc_equality_guards": 30618,
+          "numeric_nodes": 1844785,
+          "read_ops": 4825,
+          "write_ops": 10153,
+          "model_bytes": 42074624
+        },
+        "common_success_model_totals": {
+          "state_count": 5981,
+          "bitvec_state_bits": 154872,
+          "array_state_count": 558,
+          "instruction_positions": 110680,
+          "pc_positions": 29863,
+          "active_pc_entries": 29773,
+          "pc_equality_guards": 30618,
+          "numeric_nodes": 1844785,
+          "read_ops": 4825,
+          "write_ops": 10153,
+          "model_bytes": 42074624
+        },
+        "failure_taxonomy_all_770": {
+          "runtime_object_byte_capacity": 5,
+          "allocation_byte_capacity": 138,
+          "no_selected_source_property": 1,
+          "automatic_object_lifetime": 21,
+          "allocation_count": 1
+        },
+        "failure_taxonomy_nonrecursive_766": {
+          "runtime_object_byte_capacity": 5,
+          "allocation_byte_capacity": 138,
+          "no_selected_source_property": 1,
+          "automatic_object_lifetime": 18,
+          "allocation_count": 1
+        },
+        "successful_property_totals": {
+          "bad": 893,
+          "constraint": 845
+        },
+        "common_success_property_totals": {
+          "bad": 893,
+          "constraint": 845
+        }
+      },
+      "after": {
+        "all_770": {
+          "pass": 604,
+          "conversion_error": 166
+        },
+        "non_recursive_766": {
+          "pass": 603,
+          "conversion_error": 163
+        },
+        "successful_model_totals": {
+          "state_count": 5560,
+          "bitvec_state_bits": 141205,
+          "array_state_count": 558,
+          "instruction_positions": 110680,
+          "pc_positions": 26624,
+          "active_pc_entries": 26541,
+          "pc_equality_guards": 27386,
+          "numeric_nodes": 1835304,
+          "read_ops": 4825,
+          "write_ops": 10153,
+          "model_bytes": 41835049
+        },
+        "common_success_model_totals": {
+          "state_count": 5560,
+          "bitvec_state_bits": 141205,
+          "array_state_count": 558,
+          "instruction_positions": 110680,
+          "pc_positions": 26624,
+          "active_pc_entries": 26541,
+          "pc_equality_guards": 27386,
+          "numeric_nodes": 1835304,
+          "read_ops": 4825,
+          "write_ops": 10153,
+          "model_bytes": 41835049
+        },
+        "failure_taxonomy_all_770": {
+          "runtime_object_byte_capacity": 5,
+          "allocation_byte_capacity": 138,
+          "no_selected_source_property": 1,
+          "automatic_object_lifetime": 21,
+          "allocation_count": 1
+        },
+        "failure_taxonomy_nonrecursive_766": {
+          "runtime_object_byte_capacity": 5,
+          "allocation_byte_capacity": 138,
+          "no_selected_source_property": 1,
+          "automatic_object_lifetime": 18,
+          "allocation_count": 1
+        },
+        "successful_property_totals": {
+          "bad": 893,
+          "constraint": 845
+        },
+        "common_success_property_totals": {
+          "bad": 893,
+          "constraint": 845
+        }
+      },
+      "common_success_reductions_percent": {
+        "state_count": 7.039,
+        "bitvec_state_bits": 8.8247,
+        "array_state_count": 0.0,
+        "instruction_positions": 0.0,
+        "pc_positions": 10.8462,
+        "active_pc_entries": 10.8555,
+        "pc_equality_guards": 10.5559,
+        "numeric_nodes": 0.5139,
+        "read_ops": 0.0,
+        "write_ops": 0.0,
+        "model_bytes": 0.5694
+      }
+    },
+    "mixed": {
+      "common_success_tasks": 604,
+      "newly_converted_tasks": 0,
+      "newly_converted_file_paths": [],
+      "newly_converted_model_totals": {
+        "state_count": 0,
+        "bitvec_state_bits": 0,
+        "array_state_count": 0,
+        "instruction_positions": 0,
+        "pc_positions": 0,
+        "active_pc_entries": 0,
+        "pc_equality_guards": 0,
+        "numeric_nodes": 0,
+        "read_ops": 0,
+        "write_ops": 0,
+        "model_bytes": 0
+      },
+      "before": {
+        "all_770": {
+          "pass": 604,
+          "conversion_error": 166
+        },
+        "non_recursive_766": {
+          "pass": 603,
+          "conversion_error": 163
+        },
+        "successful_model_totals": {
+          "state_count": 5984,
+          "bitvec_state_bits": 171928,
+          "array_state_count": 505,
+          "instruction_positions": 110680,
+          "pc_positions": 29863,
+          "active_pc_entries": 29773,
+          "pc_equality_guards": 30618,
+          "numeric_nodes": 1841286,
+          "read_ops": 2608,
+          "write_ops": 9892,
+          "model_bytes": 41985621
+        },
+        "common_success_model_totals": {
+          "state_count": 5984,
+          "bitvec_state_bits": 171928,
+          "array_state_count": 505,
+          "instruction_positions": 110680,
+          "pc_positions": 29863,
+          "active_pc_entries": 29773,
+          "pc_equality_guards": 30618,
+          "numeric_nodes": 1841286,
+          "read_ops": 2608,
+          "write_ops": 9892,
+          "model_bytes": 41985621
+        },
+        "failure_taxonomy_all_770": {
+          "runtime_object_byte_capacity": 5,
+          "allocation_byte_capacity": 138,
+          "no_selected_source_property": 1,
+          "automatic_object_lifetime": 21,
+          "allocation_count": 1
+        },
+        "failure_taxonomy_nonrecursive_766": {
+          "runtime_object_byte_capacity": 5,
+          "allocation_byte_capacity": 138,
+          "no_selected_source_property": 1,
+          "automatic_object_lifetime": 18,
+          "allocation_count": 1
+        },
+        "successful_property_totals": {
+          "bad": 893,
+          "constraint": 845
+        },
+        "common_success_property_totals": {
+          "bad": 893,
+          "constraint": 845
+        }
+      },
+      "after": {
+        "all_770": {
+          "pass": 604,
+          "conversion_error": 166
+        },
+        "non_recursive_766": {
+          "pass": 603,
+          "conversion_error": 163
+        },
+        "successful_model_totals": {
+          "state_count": 5563,
+          "bitvec_state_bits": 158261,
+          "array_state_count": 505,
+          "instruction_positions": 110680,
+          "pc_positions": 26624,
+          "active_pc_entries": 26541,
+          "pc_equality_guards": 27386,
+          "numeric_nodes": 1831805,
+          "read_ops": 2608,
+          "write_ops": 9892,
+          "model_bytes": 41745927
+        },
+        "common_success_model_totals": {
+          "state_count": 5563,
+          "bitvec_state_bits": 158261,
+          "array_state_count": 505,
+          "instruction_positions": 110680,
+          "pc_positions": 26624,
+          "active_pc_entries": 26541,
+          "pc_equality_guards": 27386,
+          "numeric_nodes": 1831805,
+          "read_ops": 2608,
+          "write_ops": 9892,
+          "model_bytes": 41745927
+        },
+        "failure_taxonomy_all_770": {
+          "runtime_object_byte_capacity": 5,
+          "allocation_byte_capacity": 138,
+          "no_selected_source_property": 1,
+          "automatic_object_lifetime": 21,
+          "allocation_count": 1
+        },
+        "failure_taxonomy_nonrecursive_766": {
+          "runtime_object_byte_capacity": 5,
+          "allocation_byte_capacity": 138,
+          "no_selected_source_property": 1,
+          "automatic_object_lifetime": 18,
+          "allocation_count": 1
+        },
+        "successful_property_totals": {
+          "bad": 893,
+          "constraint": 845
+        },
+        "common_success_property_totals": {
+          "bad": 893,
+          "constraint": 845
+        }
+      },
+      "common_success_reductions_percent": {
+        "state_count": 7.0354,
+        "bitvec_state_bits": 7.9493,
+        "array_state_count": 0.0,
+        "instruction_positions": 0.0,
+        "pc_positions": 10.8462,
+        "active_pc_entries": 10.8555,
+        "pc_equality_guards": 10.5559,
+        "numeric_nodes": 0.5149,
+        "read_ops": 0.0,
+        "write_ops": 0.0,
+        "model_bytes": 0.5709
+      }
+    }
+  },
+  "new_conversion_failures": [],
+  "bad_count_mismatches": [],
+  "constraint_count_increases": [],
+  "source_hash_mismatches": [],
+  "task_yml_hash_mismatches": [],
+  "model_hash_mismatches": [],
+  "evidence_directories": [
+    "results/phase4-final-lab1-full",
+    "results/phase4-final-regressions",
+    "results/phase4-final-witness-smoke"
+  ],
+  "benchmark_command": {
+    "before": "/Users/west/Developer/cbmc/test/c2btor_optimizations/results/phase4-reviewed-snapshot/c2btor",
+    "after": "/Users/west/Developer/cbmc/test/c2btor_optimizations/results/phase4-reviewed-snapshot/c2btor",
+    "before_arg": [],
+    "after_arg": [
+      "--goto-btor2-array-blocks"
+    ],
+    "common_arg": [
+      "--goto-btor2-optimize-state",
+      "--goto-btor2-logical-arrays",
+      "--goto-btor2-scalar-blocks",
+      "-I",
+      "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include"
+    ],
+    "catbtor": "/Users/west/Developer/btor2tools/build/bin/catbtor",
+    "btorsim": null,
+    "output_dir": "/Users/west/Developer/cbmc/test/c2btor_optimizations/results/phase4-final-lab1-full",
+    "mode": "metrics",
+    "configs": [
+      "bv",
+      "array",
+      "mixed"
+    ],
+    "architectures": "32,64",
+    "regression_manifest": "/Users/west/Developer/cbmc/test/c2btor_optimizations/cases.json",
+    "dataset": "/Users/west/Developer/cbmc/test/lab1-data",
+    "records": "/Users/west/Downloads/Lab1_btor_v8_records.csv",
+    "aiob_headers": "/private/tmp/c2btor-aiob-size-audit-fgx6ct9k/linux_compatible_headers",
+    "cases_file": null,
+    "case_filter": [],
+    "limit": null,
+    "frames": 256,
+    "workers": 3,
+    "conversion_timeout": 60,
+    "parser_timeout": 30,
+    "simulation_timeout": 30,
+    "memory_gib": 4.0,
+    "max_model_mib": 128.0
+  },
+  "records": {
+    "path": "/Users/west/Downloads/Lab1_btor_v8_records.csv",
+    "sha256": "40a77eea884a35540209b18dc89d788f36d8a9e582b02472bb0d8dff2c2068cf"
+  },
+  "dataset_manifest_sha256": "0610adb6dfc1fee58a725601408cfc53deac63aa23aa5e31a8b102cbd7255f47",
+  "fixture_manifests": {
+    "cases-phase4.json": "060a7020eeb1e719374a8a54e5dae3e566259588a7a13122808e466189b83fa8",
+    "cases-witness-phase4.json": "14dea8e3e454f67f780d5f510cae106890e4d8280af41a366309bf1b7aabf077"
+  },
+  "limits": [
+    "General heap/byte capacity and lifetime/count certification remain enforced.",
+    "Array blocks merge integer/Bool logical element operations; enum/float, aggregate, physical-memory, nondet and ASSUME operations retain boundaries. Loops remain transitions; block limits are not loop-unwind bounds.",
+    "Parser acceptance, finite simulation, and offline witness lint are not unbounded safety or semantic equivalence proofs."
+  ],
+  "source_hash_verification": {
+    "primary_task_sources": 770,
+    "before_after_and_current_equal": true,
+    "stage1_current_equal": true,
+    "stage2_current_equal": true,
+    "stage3_current_equal": true,
+    "stage1_stage2_stage3_yml_current_equal": true,
+    "source_and_yml_ledger": "results/phase4-final-lab1-full/source-hashes.json",
+    "ledger_sha256": "82c78121908ba2fcd36e05828419e56908c74a97dfbe0bd79de29d1c745e792c"
+  },
+  "model_hash_verification": {
+    "models": 3524,
+    "all_current_model_hashes_equal": true
+  },
+  "fixture_source_hashes": {
+    "test/c2btor_optimizations/phase4_assert_versions.c": "d10f990f1bf7fce69b178ded3c0adecd460c7677db692580c429013a1da19aac",
+    "test/c2btor_optimizations/phase2_bool.c": "fa541d94e864ffefd6f71c81336c5c62a72593eb43635404f7df013fa055209b",
+    "test/c2btor_optimizations/phase4_branch_join.c": "bdc180a489d88ec1804c3b503d737f57bdbe8f9599210889d617a61bceb5a1b6",
+    "test/c2btor_optimizations/phase2_address_escape.c": "09dd667e2b73c2d0254fd2e078ce17fe7629a3f4e141cb46247502de22617546",
+    "test/c2btor_optimizations/phase2_byte_alias.c": "411c1d43e60746a66e8faa24d2c2b3f0f3e3dbc53bd31d172678118882d7a639",
+    "test/c2btor_optimizations/phase2_generic_alias.c": "5a177b8289ed1c8b5256983565e9657d5d5fda90a7ae420bcba040a1c953b705",
+    "test/c2btor_optimizations/phase4_independent_arrays.c": "fea840e982ccbb001f4758c35a45035d7e6620177938f06fd987521501b98086",
+    "test/c2btor_optimizations/phase4_last_write.c": "a17563aba28fb3ef4a65838e8a59c8ad4f26afe6caf384743b8d54e4af20e61b",
+    "test/c2btor_optimizations/phase4_loop.c": "0d7b1b8db6dc09c68d11cebfd00cbf133b2797a051266652f16436e72d298873",
+    "test/c2btor_optimizations/phase4_loop_vla_latched.c": "81244b76b8dfa198656b9ed0a7cf6342ddaeebd5e23a5e81ebd4519c7cb522b3",
+    "test/c2btor_optimizations/phase2_pointer_identity.c": "b431ea1f4f2c9ab62267ea7c046ac0483f3c174076e138b1dd320175891575c7",
+    "test/c2btor_optimizations/phase4_store_read.c": "f44bc613d0299ae9fdaed09727c823225efbd8cef9b873de5e49b0f61250d611",
+    "test/c2btor_optimizations/phase4_vla_latched_stride.c": "d81ba888e3656f197d6253e52d4117c4d252e4f6225dfac99e98c03751318c83",
+    "test/c2btor_optimizations/phase4_witness_array.c": "461409274ae200bb00da2734b2f5242fcb0ddc2c2d9d586052d1fa9fb012728e"
+  },
+  "fixture_source_hash_verification": {
+    "source_files": 14,
+    "before_after_and_current_equal": true
+  },
+  "off_flag_phase3_model_compatibility": {
+    "comparison": "phase4 before versus phase3 after",
+    "status_comparisons": 2310,
+    "status_mismatches": [],
+    "source_hash_mismatches": [],
+    "successful_models_compared": 1762,
+    "exact_model_hash_matches": 1762,
+    "model_hash_mismatches": [],
+    "all_equal": true,
+    "independent_audit": {
+      "path": "results/phase4-final-lab1-full/off-switch-compatibility-independent.json",
+      "sha256": "a8a6c02c60d08bc55bb95929a3db8e1b6163d935493a79a14e94d2b9075d30d7",
+      "source_yml_status_pairs_equal": 2310,
+      "model_hash_pairs_equal": 1762,
+      "current_model_file_hash_checks": 3524
+    }
+  },
+  "benchmark_models_include_witness_observations": false,
+  "large_tail_spotlight": {
+    "case": "loop-industry-pattern/aiob_4.c.v+nlh-reducer.c",
+    "encodings": {
+      "bv": {
+        "phase3_on_bytes": 5872705,
+        "phase4_off_bytes": 5872705,
+        "phase4_on_bytes": 5872705,
+        "bytes_saved_phase4": 0,
+        "descending_size_rank": 1,
+        "successful_models": 554,
+        "share_of_after_model_bytes_percent": 19.8473,
+        "model_sha256": "b8c6cec05b7f5506767c47d889b16cd2bc15b7b5a4ccedcdadca5afad5fe8379"
+      },
+      "array": {
+        "phase3_on_bytes": 19287780,
+        "phase4_off_bytes": 19287780,
+        "phase4_on_bytes": 19287780,
+        "bytes_saved_phase4": 0,
+        "descending_size_rank": 1,
+        "successful_models": 604,
+        "share_of_after_model_bytes_percent": 46.1044,
+        "model_sha256": "05bdc1e6606cbb2fc577cee2783e87077822c2ab48b6c3e70c4c8ace60b784ee"
+      },
+      "mixed": {
+        "phase3_on_bytes": 19176428,
+        "phase4_off_bytes": 19176428,
+        "phase4_on_bytes": 19176428,
+        "bytes_saved_phase4": 0,
+        "descending_size_rank": 1,
+        "successful_models": 604,
+        "share_of_after_model_bytes_percent": 45.936,
+        "model_sha256": "86c207f6fef2489efb8e2809d6097d45a8741464db7919f9067e77c464091c6b"
+      }
+    },
+    "causality_scope": "Earlier large-tail preparation b912ef is separate from the four optimization stages; these sizes compare phase4 off/on only."
+  },
+  "initial_superseded_finite_run": {
+    "path": "results/phase4-reviewed-regressions",
+    "final_evidence": false,
+    "reason": "Twelve VLA metadata checks incorrectly required persistent DIM/data states after block-local storage pruning. The two fixture-specific checks now validate retained storage input sorts, and strengthened cross-row/reentry assertions pass in the final suite.",
+    "converter_sha256_unchanged": true
+  },
+  "finite_property_count_audit": {
+    "regressions": {
+      "pairs": 90,
+      "bad_count_mismatches": [],
+      "constraint_count_increases": []
+    },
+    "witness_roundtrips": {
+      "pairs": 6,
+      "bad_count_mismatches": [],
+      "constraint_count_increases": []
+    }
+  },
+  "analysis_sha256": "00841caaa67c14e90b0f2b8cdfa79dc92e0d04feee8bed6fb9d4adb931edaf40",
+  "full_770_all_converted": false
+}

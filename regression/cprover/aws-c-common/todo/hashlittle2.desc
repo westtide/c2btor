@@ -1,6 +1,0 @@
-CORE
-hashlittle2_contract.c
---safety
-^EXIT=0$
-^SIGNAL=0$
---

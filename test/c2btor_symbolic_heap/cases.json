@@ -1,0 +1,117 @@
+{
+  "schema_version": 1,
+  "feature_flag": "--goto-btor2-symbolic-heap",
+  "stage_flags": {
+    "phase1": ["--goto-btor2-symbolic-heap"],
+    "phase2": ["--goto-btor2-symbolic-heap", "--goto-btor2-symbolic-heap-arrays"],
+    "phase3": ["--goto-btor2-symbolic-heap", "--goto-btor2-symbolic-heap-arrays", "--goto-btor2-symbolic-heap-wide-offsets"],
+    "phase4": ["--goto-btor2-symbolic-heap", "--goto-btor2-symbolic-heap-arrays", "--goto-btor2-symbolic-heap-wide-offsets", "--goto-btor2-symbolic-heap-compact"]
+  },
+  "stage_expectation_note": "expected_on describes final symbolic-heap support, not phase1 alone. Phase1 retains old representation/capacity rejection thresholds while preserving allocation size expressions/snapshots. Phase2 enables symbolic byte-array storage; phase3 widens byte offsets only when the old signed domain is insufficient, with explicit serialization boundaries. Phase4 compact storage reuses symbolic slots' initial/runtime states and selects word cells only with a conservative CFG certificate.",
+  "scope": "conversion/parser, structural checks, and planned fixed-input finite simulation; no model checking or C safety proofs",
+  "common_options": ["--goto-btor2", "--inline", "--goto-btor2-merge-bads", "--memory", "object", "--little-endian", "--goto-btor2-no-lbe", "--goto-btor2-no-slice-property"],
+  "required_properties": "Only source GOTO ASSERT roots; no heap-generated bad or path-pruning assume/constraint. Source assertions that query r_ok are intentional source properties.",
+  "cases": [
+    {
+      "name": "T1_original_nsqm_iff", "source": "../lab1-data/array-fpi/nsqm-iff.c", "task": "../lab1-data/array-fpi/nsqm-iff.yml", "architectures": ["32"], "inputs": [1],
+      "expected_source_properties": 1, "expected_allocation_slots": 2, "expected_on": "convert_parse", "semantic_expectation": "Supplied N=1 successful-allocation trace reaches the original source assertion failure (a[0]=2, required=1). A FALSE result alone cannot establish object isolation.",
+      "source_may_have_ub": true, "note": "Original source has no malloc failure guard. Do not replace its unsigned-int malloc parameter with size_t. Use the original file in place."
+    },
+    {
+      "name": "T2_large_object_isolation", "source": "t2_large_objects.c", "architectures": ["32", "64"], "inputs": [536870911],
+      "expected_source_properties": 1, "expected_allocation_slots": 2, "expected_on": "convert_parse", "semantic_expectation": "On successful allocations a[0]=11 and b[8]=22 coexist, with distinct tags. Node/array counts must not grow with 4294967288 bytes.",
+      "source_may_have_ub": false, "note": "No OS allocation is run. The 32-bit model's two huge successful allocations use the existing abstract malloc success semantics; report this premise rather than a concrete 32-bit address-space allocation claim."
+    },
+    {
+      "name": "T2_high_legal_offset", "source": "t2_high_offset.c", "architectures": ["32", "64"], "inputs": [536870911],
+      "expected_source_properties": 1, "expected_allocation_slots": 2, "expected_on": "convert_parse", "semantic_expectation": "Highest element's byte offset is 4294967280, never truncated to the existing low tag-offset payload. First and last bytes of two distinct objects remain isolated.",
+      "source_may_have_ub": false, "note": "Same abstract successful-allocation premise as T2. C sizeof(void*) and layout stay 4/8 bytes despite a wider hidden pointer encoding."
+    },
+    {
+      "name": "T3_size_snapshot", "source": "t3_size_snapshot.c", "architectures": ["32", "64"], "inputs": [3],
+      "expected_source_properties": 1, "expected_allocation_slots": 1, "expected_on": "convert_parse", "semantic_expectation": "Actual supported __CPROVER_OBJECT_SIZE observations before/after n=1 both equal 24, and p[2]=7 is accessible.",
+      "observations": {"observed_size_before": 24, "observed_size_after": 24, "observed_last_value": 7}, "source_may_have_ub": false
+    },
+    {
+      "name": "T2_symbolic_extent_small", "source": "t2_symbolic_extent.c", "architectures": ["32", "64"], "inputs": [10],
+      "expected_source_properties": 1, "expected_allocation_slots": 2, "expected_on": "convert_parse", "semantic_expectation": "A non-singleton source size range 10..536870911 exercises symbolic byte-array storage. Supplied n=10 gives size 80 and last-element byte offset 72; a[0]=11, b[8]=22, last values 31/47 stay isolated. Target sizeof(void*) equals size_t.",
+      "expected_symbolic_storage": true, "source_may_have_ub": false
+    },
+    {
+      "name": "T2_symbolic_extent_large", "source": "t2_symbolic_extent.c", "architectures": ["32", "64"], "inputs": [536870911],
+      "expected_source_properties": 1, "expected_allocation_slots": 2, "expected_on": "convert_parse", "semantic_expectation": "The same non-singleton size source, supplied n=536870911, gives two 4294967288-byte symbolic objects and last-element offset 4294967280. Tags and byte lanes remain isolated, with full target-width offset and unchanged C pointer sizeof. Different supplied traces do not establish C SAFE or standard-C equivalence.",
+      "expected_symbolic_storage": true, "source_may_have_ub": false, "note": "Use existing abstract successful-allocation semantics; do not infer real OS allocation feasibility."
+    },
+    {
+      "name": "T4_same_object_alias", "source": "t4_same_object_alias.c", "architectures": ["32", "64"], "inputs": [],
+      "expected_source_properties": 1, "expected_allocation_slots": 1, "expected_on": "convert_parse", "semantic_expectation": "Constant-capacity compatibility: q=p uses the same tag, offset and bytes; both observe 9.", "source_may_have_ub": false
+    },
+    {
+      "name": "T5_last_legal", "source": "t5_last_legal.c", "architectures": ["32", "64"], "inputs": [3],
+      "expected_source_properties": 1, "expected_allocation_slots": 1, "expected_on": "convert_parse", "semantic_expectation": "Last 8-byte access at offset 16 is accessible; formed one-past at offset 24 preserves tag and is not r_ok for 8 bytes. No one-past dereference occurs.", "source_may_have_ub": false
+    },
+    {
+      "name": "T5_one_past_ub", "source": "t5_one_past_ub.c", "architectures": ["32", "64"], "inputs": [3],
+      "expected_source_properties": 1, "expected_allocation_slots": 1, "expected_on": "convert_parse", "semantic_expectation": "Deliberate one-past dereference follows pre-existing backend totalization. Compare observed_one_past and observed_first_after_ub to a constant-size counterpart in the same backend; no C SAFE claim.",
+      "source_may_have_ub": true, "ub_observations": ["observed_one_past", "observed_first_after_ub"]
+    },
+    {
+      "name": "T6_unbounded_event_count", "source": "t6_unbounded_events.c", "architectures": ["32", "64"], "inputs": [],
+      "expected_source_properties": 1, "expected_on": "reject_no_model", "rejection_reason": "unbounded allocation event count", "semantic_expectation": "Constant-sized malloc in an unbounded nondet loop still rejects; one source site must not become one reusable identity.", "source_may_have_ub": false
+    },
+    {
+      "name": "T6_three_events_one_site", "source": "t6_three_events.c", "architectures": ["32", "64"], "inputs": [],
+      "expected_source_properties": 1, "expected_allocation_slots": 3, "expected_on": "convert_parse", "semantic_expectation": "Three certified loop iterations use three distinct successful-allocation identities; constant capacity stays on the existing representation.", "source_may_have_ub": false
+    },
+    {
+      "name": "T7_nondet_latch", "source": "t7_nondet_latch.c", "architectures": ["32", "64"], "inputs": [3, 41],
+      "required_nondet_calls": 2, "expected_source_properties": 1, "expected_allocation_slots": 2, "expected_on": "convert_parse", "semantic_expectation": "The n call executes once, both observations stay 3 and both size snapshots stay 24. Also replay with nondet input ports changing after their call frames to detect improper re-reading.",
+      "observations": {"observed_first_n": 3, "observed_second_n": 3, "observed_delay": 42, "observed_a_size": 24, "observed_b_size": 24}, "source_may_have_ub": false
+    },
+    {
+      "name": "T8_legal_mixed_bytes", "source": "t8_mixed_bytes.c", "architectures": ["32", "64"], "inputs": [2],
+      "expected_source_properties": 1, "expected_allocation_slots": 1, "expected_on": "convert_parse", "semantic_expectation": "Little-endian union representation and legal unsigned-char alias expose the same 8/16/32/64-bit byte lanes. wide=0x112233445566AB88, short[0]=0xAB88, int[0]=0x5566AB88. No incompatible typed-pointer alias is used.", "source_may_have_ub": false
+    },
+    {
+      "name": "T8_free_ub", "source": "t8_free_ub.c", "architectures": ["32", "64"], "inputs": [2],
+      "expected_source_properties": 1, "expected_allocation_slots": 1, "expected_on": "convert_parse", "semantic_expectation": "free flips r_ok from true to false and preserves tag/size. Deliberate post-free byte read/write follow existing live-independent totalization. Compare same-backend constant-size counterpart; no C SAFE claim.",
+      "source_may_have_ub": true, "ub_observations": ["observed_freed_byte", "observed_freed_word"], "observations": {"observed_live_before": 1, "observed_live_after": 0}
+    },
+    {
+      "name": "T8_symbolic_mixed_bytes", "source": "t8_symbolic_mixed_bytes.c", "architectures": ["32", "64"], "inputs": [3],
+      "expected_source_properties": 1, "expected_allocation_slots": 1, "expected_on": "convert_parse", "expected_symbolic_storage": true,
+      "semantic_expectation": "A non-singleton n=2..536870911 range forces symbolic Array storage even in Mixed; at supplied n=3 the legal union/unsigned-char aliases expose consistent 8/16/32/64-bit lanes and size24. Compact word certification must fail and retain byte8 Array cells. The original singleton mixed-byte fixture separately preserves the old constant representation.",
+      "source_may_have_ub": false
+    },
+    {
+      "name": "T9_size_t_arithmetic", "source": "t9_size_t_arithmetic.c", "architectures": ["32", "64"], "inputs": [536870913],
+      "expected_source_properties": 1, "expected_allocation_slots": 1, "expected_on": "convert_parse", "semantic_expectation": "sizeof(long long)*n evaluates in size_t: 8 bytes under ILP32, 4294967304 under LP64. object_size snapshots exactly that result.",
+      "observations_by_architecture": {"32": {"observed_bytes": 8, "observed_object_size": 8}, "64": {"observed_bytes": 4294967304, "observed_object_size": 4294967304}}, "source_may_have_ub": false
+    },
+    {
+      "name": "T8_symbolic_calloc_zero", "source": "t8_symbolic_calloc_zero.c", "architectures": ["32", "64"], "inputs": [3],
+      "expected_source_properties": 1, "expected_allocation_slots": 1, "expected_on": "convert_parse", "expected_symbolic_storage_configs": ["array"],
+      "observations": {"observed_calloc_first_before": 0, "observed_calloc_last_before": 0, "observed_calloc_last_after": 0, "observed_calloc_size": 24},
+      "semantic_expectation": "n ranges over 2..3 so capacity remains non-singleton. At supplied n=3, calloc produces one 24-byte zeroed object; untouched first/last words are zero even under a nonzero raw array seed. Writing p[0]=9 leaves the last word zero, and sizeof/pointer layout use target C semantics.",
+      "source_may_have_ub": false
+    },
+    {
+      "name": "T9_actual_malloc_parameter", "source": "t9_malloc_parameter.c", "architectures": ["32"], "inputs": [536870913],
+      "expected_source_properties": 1, "expected_allocation_slots": 1, "expected_on": "convert_parse", "semantic_expectation": "Original-style unsigned-int malloc receives 8 under its actual ILP32 target. Its LP64 declaration conflicts with the library size_t signature and is outside this fixture's target contract.",
+      "observations_by_architecture": {"32": {"observed_wide_bytes": 8, "observed_parameter_bytes": 8, "observed_object_size": 8}}, "source_may_have_ub": false
+    },
+    {
+      "name": "T9_unsigned_function_parameter", "source": "t9_unsigned_parameter.c", "architectures": ["32", "64"], "inputs": [536870913],
+      "expected_source_properties": 1, "expected_allocation_slots": 1, "expected_on": "convert_parse", "semantic_expectation": "An unsigned-int wrapper receives 8 in both targets after the source function-parameter conversion, then calls standard size_t malloc with 8. Pre-call size_t product is 8 under ILP32 and 4294967304 under LP64.",
+      "observations_by_architecture": {"32": {"observed_wide_bytes": 8, "observed_parameter_bytes": 8, "observed_object_size": 8}, "64": {"observed_wide_bytes": 4294967304, "observed_parameter_bytes": 8, "observed_object_size": 8}}, "source_may_have_ub": false
+    },
+    {
+      "name": "boundary_pointer_integer", "source": "boundary_pointer_integer.c", "architectures": ["32", "64"], "inputs": [3],
+      "expected_source_properties": 1, "expected_on": "reject_no_model_unless_faithful_serialization", "rejection_reason": "wider hidden symbolic-heap pointer cannot be serialized to C uintptr_t faithfully", "semantic_expectation": "Reject explicitly while wider hidden tags lack a C-width integer serialization; a hidden-width value must not be presented as sizeof(void*) or uintptr_t. Future support requires exact round-trip bytes/value semantics.", "source_may_have_ub": false
+    },
+    {
+      "name": "boundary_addressable_pointer", "source": "boundary_addressable_pointer.c", "architectures": ["32", "64"], "inputs": [3],
+      "expected_source_properties": 1, "expected_on": "reject_no_model_unless_faithful_serialization", "rejection_reason": "wider hidden symbolic-heap pointer cannot be stored in C pointer-width object bytes faithfully", "semantic_expectation": "Reject explicitly while addressable pointer object bytes cannot encode hidden tags. C pointer object layout stays 4/8 bytes. Future support requires exact pointer-store/load and byte-copy semantics.", "source_may_have_ub": false
+    }
+  ]
+}

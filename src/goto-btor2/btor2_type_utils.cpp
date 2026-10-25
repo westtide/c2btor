@@ -1,8 +1,11 @@
+// SPDX-License-Identifier: BSD-4-Clause
+// SPDX-FileCopyrightText: 2026 C2BTOR contributors
+
 /*******************************************************************\
 
 Module: BTOR2 类型工具 - 实现
 
-Author: Based on CBMC project
+Authors: C2BTOR contributors; CBMC attribution is retained in LICENSES/
 
 \*******************************************************************/
 

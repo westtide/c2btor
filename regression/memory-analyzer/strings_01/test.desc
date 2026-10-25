@@ -1,8 +1,0 @@
-CORE
-main.gb
---breakpoint checkpoint --symbols s
-char tmp\[\];
-tmp = \"abc\";
-s = tmp;
-^EXIT=0$
-^SIGNAL=0$

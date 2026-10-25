@@ -56,7 +56,7 @@ std::string cpp_typecheckt::template_suffix(
       if(e.id() == ID_symbol)
       {
         const symbol_exprt &s = to_symbol_expr(e);
-        const symbolt &symbol = lookup(s.get_identifier());
+        const symbolt &symbol = lookup(s.identifier());
 
         if(cpp_is_pod(symbol.type) && symbol.type.get_bool(ID_C_constant))
           e = symbol.value;
@@ -486,8 +486,8 @@ const symbolt &cpp_typecheckt::instantiate_template(
     if(new_decl.member_spec().is_virtual())
     {
       error().source_location=new_decl.source_location();
-      error() << "invalid use of `virtual' in template declaration"
-              << eom;
+      error() << "invalid use of " << quote_begin << "virtual" << quote_end
+              << " in template declaration" << eom;
       throw 0;
     }
 

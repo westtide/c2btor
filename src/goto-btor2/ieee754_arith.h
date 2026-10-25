@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: BSD-4-Clause
+// SPDX-FileCopyrightText: 2026 C2BTOR contributors
+
 #ifndef C2BTOR_IEEE754_ARITH_H
 #define C2BTOR_IEEE754_ARITH_H
 
@@ -7,16 +10,13 @@
 
 #include <map>
 
-// Self-contained IEEE-754 circuits for BTOR2 lowering of C floating-point
-// arithmetic. Strategy: decode the IEEE layout (sign, biased exponent,
-// fraction), compute on extended fixed-point significands, apply a single
-// rounding step in the requested mode, and keep NaN/Inf/zero branches explicit.
-// The circuits use no free bits and no global assumptions, so the model
-// semantics is exactly the gate-level circuit.
-//
-// Binary32/binary64 include subnormal inputs and gradual underflow. Arithmetic
-// and conversions to floating-point support all five CBMC IEEE rounding modes;
-// integral casts truncate toward zero. The caller checks mode/domain validity.
+// BTOR2 floating operations. Basic arithmetic, conversions and integral
+// rounding reuse CBMC float_utilst through btor2_propt/btor2_float_utilst.
+// Functional udiv/urem replace CBMC's relational significand divider.
+// sqrt/FMA/remainder retain dedicated IEEE circuits. Both paths support the
+// five CBMC rounding modes, including runtime mode selection, and binary32/64.
+// Invalid-mode fallback in CBMC's rounding circuit is semantic nondeterminism;
+// no auxiliary constraints, bads, or execution guards are generated.
 class ieee754_aritht
 {
 public:
@@ -28,6 +28,7 @@ public:
   btor2_nid_t mul(btor2_nid_t a, btor2_nid_t b) const;
   btor2_nid_t div(btor2_nid_t a, btor2_nid_t b) const;
   btor2_nid_t sqrt(btor2_nid_t a) const;
+  btor2_nid_t round_to_integral(btor2_nid_t a) const;
   btor2_nid_t fma(btor2_nid_t a, btor2_nid_t b, btor2_nid_t c) const;
   // nearest=true implements IEEE remainder (ties-even quotient); false is
   // fmod (truncated quotient). Both produce an exact, mode-independent result.
@@ -41,12 +42,8 @@ public:
     btor2_nid_t src,
     std::size_t src_width,
     bool src_signed) const;
-  btor2_nid_t cast_float_to_int(btor2_nid_t src, std::size_t dest_width) const;
-  // Whether the truncated finite value is representable in the C destination.
-  btor2_nid_t float_to_int_valid(
-    btor2_nid_t src,
-    std::size_t dest_width,
-    bool dest_signed) const;
+  btor2_nid_t cast_float_to_int(
+    btor2_nid_t src, std::size_t dest_width, bool dest_signed = true) const;
   btor2_nid_t cast_float_to_float(btor2_nid_t src, std::size_t src_width) const;
 
   // classification and simple rewrites

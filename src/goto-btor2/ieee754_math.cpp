@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: BSD-4-Clause
+// SPDX-FileCopyrightText: 2026 C2BTOR contributors
+
 #include "ieee754_arith.h"
 
 // Both add and FMA align exact significands before their single rounding step.

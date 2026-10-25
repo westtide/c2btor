@@ -35,10 +35,7 @@ class ansi_c_languaget:public languaget
 {
 public:
   void
-  set_language_options(const optionst &options, message_handlert &) override
-  {
-    object_factory_params.set(options);
-  }
+  set_language_options(const optionst &options, message_handlert &) override;
 
   bool preprocess(
     std::istream &instream,
@@ -124,6 +121,7 @@ protected:
   std::string parse_path;
 
   c_object_factory_parameterst object_factory_params;
+  bool capture_call_return_locations = false;
 };
 
 std::unique_ptr<languaget> new_ansi_c_language();

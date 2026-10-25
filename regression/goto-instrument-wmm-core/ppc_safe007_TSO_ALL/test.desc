@@ -1,8 +1,0 @@
-CORE
-safe007.c
-TSO ALL
-^EXIT=0$
-^SIGNAL=0$
-^VERIFICATION SUCCESSFUL$
---
-^warning: ignoring

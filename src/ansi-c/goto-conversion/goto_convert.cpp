@@ -37,6 +37,22 @@ static bool is_empty(const goto_programt &goto_program)
   return true;
 }
 
+// Translation metadata only: the state before the first instruction that
+// evaluates a C loop condition, including its side effects. A do loop's body
+// entry is deliberately not this point. Ordinary GOTO execution is unchanged.
+static void mark_c2btor_loop_condition(
+  goto_programt::targett target,
+  const source_locationt &keyword,
+  const std::string &kind)
+{
+  auto &source = target->source_location_nonconst();
+  source.set("c2btor_loop_kind", kind);
+  source.set("c2btor_loop_file", keyword.get_file());
+  source.set("c2btor_loop_line", keyword.get_line());
+  source.set("c2btor_loop_column", keyword.get_column());
+  source.set("c2btor_loop_function", keyword.get_function());
+}
+
 /// Populate the CATCH instructions with the targets  corresponding to their
 /// associated labels
 static void finish_catch_push_targets(goto_programt &dest)
@@ -893,11 +909,10 @@ void goto_convertt::convert_assign(
       "function_call sideeffect takes two operands",
       rhs.find_source_location());
 
-    Forall_operands(it, rhs)
-    {
-      side_effects.add(clean_expr(*it, mode));
-      dest.destructive_append(side_effects.side_effects);
-    }
+    auto &rhs_call = to_side_effect_expr_function_call(rhs);
+    side_effects.add(clean_function_call_operands(
+      rhs_call.function(), rhs_call.arguments(), mode));
+    dest.destructive_append(side_effects.side_effects);
 
     do_function_call(
       lhs,
@@ -1185,6 +1200,8 @@ void goto_convertt::convert_for(
   // assigns clause, loop invariant and decreases clause
   convert_loop_contracts(code, y);
 
+  mark_c2btor_loop_condition(u, code.source_location(), "for");
+
   dest.destructive_append(side_effects.side_effects);
   dest.destructive_append(tmp_v);
   dest.destructive_append(tmp_w);
@@ -1242,6 +1259,8 @@ void goto_convertt::convert_while(
 
   // assigns clause, loop invariant and decreases clause
   convert_loop_contracts(code, y);
+
+  mark_c2btor_loop_condition(v, code.source_location(), "while");
 
   dest.destructive_append(tmp_branch);
   dest.destructive_append(tmp_x);
@@ -1321,6 +1340,8 @@ void goto_convertt::convert_dowhile(
 
   // assigns_clause, loop invariant and decreases clause
   convert_loop_contracts(code, W);
+
+  mark_c2btor_loop_condition(x, code.source_location(), "do");
 
   dest.destructive_append(tmp_w);
   dest.destructive_append(side_effects.side_effects);
@@ -1416,7 +1437,7 @@ void goto_convertt::convert_switch(
     convert(copy_value, side_effects.side_effects, mode);
 
     argument = new_symbol.symbol_expr();
-    side_effects.add_temporary(to_symbol_expr(argument).get_identifier());
+    side_effects.add_temporary(to_symbol_expr(argument).identifier());
   }
 
   // save break/default/cases targets
@@ -2183,7 +2204,7 @@ irep_idt goto_convertt::make_temp_symbol(
 
   expr = new_symbol.symbol_expr();
 
-  return to_symbol_expr(expr).get_identifier();
+  return to_symbol_expr(expr).identifier();
 }
 
 void goto_convert(

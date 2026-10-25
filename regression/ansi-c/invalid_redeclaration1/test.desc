@@ -1,9 +1,0 @@
-CORE test-c++-front-end
-main.c
-
-^EXIT=(64|1)$
-^SIGNAL=0$
-(function symbol 'a' redefined with a different type|symbol 'c' is unknown)
-^CONVERSION ERROR$
---
-Invariant check failed

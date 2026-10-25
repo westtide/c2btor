@@ -32,6 +32,7 @@ Author: Daniel Kroening, Peter Schrammel
 #include <solvers/strings/string_refinement.h>
 
 #include <iostream>
+#include <vector>
 
 solver_factoryt::solver_factoryt(
   const optionst &_options,
@@ -68,6 +69,16 @@ solver_factoryt::solvert::solvert(
   std::unique_ptr<boolbvt> p1,
   std::unique_ptr<propt> p2)
   : prop_ptr(std::move(p2)), decision_procedure_is_boolbvt_ptr(std::move(p1))
+{
+}
+
+solver_factoryt::solvert::solvert(
+  std::unique_ptr<boolbvt> p1,
+  std::unique_ptr<propt> p2,
+  std::unique_ptr<std::ofstream> p3)
+  : ofstream_ptr(std::move(p3)),
+    prop_ptr(std::move(p2)),
+    decision_procedure_is_boolbvt_ptr(std::move(p1))
 {
 }
 
@@ -138,10 +149,6 @@ smt2_dect::solvert solver_factoryt::get_smt2_solver_type() const
     s = smt2_dect::solvert::CPROVER_SMT2;
   else if(options.get_bool_option("mathsat"))
     s = smt2_dect::solvert::MATHSAT;
-  else if(options.get_bool_option("cvc3"))
-    s = smt2_dect::solvert::CVC3;
-  else if(options.get_bool_option("cvc4"))
-    s = smt2_dect::solvert::CVC4;
   else if(options.get_bool_option("cvc5"))
     s = smt2_dect::solvert::CVC5;
   else if(options.get_bool_option("yices"))
@@ -324,6 +331,27 @@ get_sat_solver(message_handlert &message_handler, const optionst &options)
   }
 }
 
+static std::unique_ptr<std::ofstream> open_outfile_and_check(
+  const std::string &filename,
+  message_handlert &message_handler,
+  const std::string &arg_name)
+{
+  if(filename.empty())
+    return nullptr;
+
+  auto out = std::make_unique<std::ofstream>(widen_if_needed(filename));
+
+  if(!*out)
+  {
+    throw invalid_command_line_argument_exceptiont(
+      "failed to open file: " + filename, arg_name);
+  }
+
+  messaget log(message_handler);
+  log.status() << "Outputting formula to file: " << filename << messaget::eom;
+  return out;
+}
+
 std::unique_ptr<solver_factoryt::solvert> solver_factoryt::get_default()
 {
   auto sat_solver = get_sat_solver(message_handler, options);
@@ -353,10 +381,21 @@ std::unique_ptr<solver_factoryt::solvert> solver_factoryt::get_dimacs()
 
   std::string filename = options.get_option("outfile");
 
-  std::unique_ptr<boolbvt> bv_dimacs =
-    std::make_unique<bv_dimacst>(ns, *prop, message_handler, filename);
+  if(filename.empty() || filename == "-")
+  {
+    std::unique_ptr<boolbvt> bv_dimacs =
+      std::make_unique<bv_dimacst>(ns, *prop, message_handler, std::cout);
 
-  return std::make_unique<solvert>(std::move(bv_dimacs), std::move(prop));
+    return std::make_unique<solvert>(std::move(bv_dimacs), std::move(prop));
+  }
+
+  auto outfile = open_outfile_and_check(filename, message_handler, "--outfile");
+
+  std::unique_ptr<boolbvt> bv_dimacs =
+    std::make_unique<bv_dimacst>(ns, *prop, message_handler, *outfile);
+
+  return std::make_unique<solvert>(
+    std::move(bv_dimacs), std::move(prop), std::move(outfile));
 }
 
 std::unique_ptr<solver_factoryt::solvert> solver_factoryt::get_external_sat()
@@ -423,28 +462,6 @@ solver_factoryt::get_string_refinement()
   set_decision_procedure_time_limit(*decision_procedure);
   return std::make_unique<solvert>(
     std::move(decision_procedure), std::move(prop));
-}
-
-std::unique_ptr<std::ofstream> open_outfile_and_check(
-  const std::string &filename,
-  message_handlert &message_handler,
-  const std::string &arg_name)
-{
-  if(filename.empty())
-    return nullptr;
-
-  auto out = std::make_unique<std::ofstream>(widen_if_needed(filename));
-
-  if(!*out)
-  {
-    throw invalid_command_line_argument_exceptiont(
-      "failed to open file: " + filename, arg_name);
-  }
-
-  messaget log(message_handler);
-  log.status() << "Outputting SMTLib formula to file: " << filename
-               << messaget::eom;
-  return out;
 }
 
 std::unique_ptr<solver_factoryt::solvert>
@@ -642,12 +659,6 @@ static void parse_smt2_options(const cmdlinet &cmdline, optionst &options)
     options.set_option("smt2", true);
   }
 
-  if(cmdline.isset("cvc4"))
-  {
-    options.set_option("cvc4", true), solver_set = true;
-    options.set_option("smt2", true);
-  }
-
   if(cmdline.isset("cvc5"))
   {
     options.set_option("cvc5", true), solver_set = true;
@@ -700,6 +711,57 @@ void parse_solver_options(const cmdlinet &cmdline, optionst &options)
 {
   parse_sat_options(cmdline, options);
   parse_smt2_options(cmdline, options);
+
+  // Detect conflicting solver backend selections. The solver categories
+  // are mutually exclusive: DIMACS output, an external SAT solver, an
+  // SMT2 solver (including --smt2, solver-specific flags like --z3, and
+  // --external-smt2-solver), and the incremental SMT2 solver.
+  std::vector<std::string> solver_flags;
+
+  if(cmdline.isset("dimacs"))
+    solver_flags.push_back("--dimacs");
+
+  if(cmdline.isset("external-sat-solver"))
+    solver_flags.push_back("--external-sat-solver");
+
+  // All SMT2-related flags are in the same category (at most one
+  // reported in the conflict message).
+  for(const char *smt2_flag :
+      {"smt2",
+       "bitwuzla",
+       "boolector",
+       "cprover-smt2",
+       "mathsat",
+       "cvc5",
+       "yices",
+       "z3",
+       "external-smt2-solver"})
+  {
+    if(cmdline.isset(smt2_flag))
+    {
+      solver_flags.push_back(std::string("--") + smt2_flag);
+      break;
+    }
+  }
+
+  if(cmdline.isset("incremental-smt2-solver"))
+    solver_flags.push_back("--incremental-smt2-solver");
+
+  if(solver_flags.size() > 1)
+  {
+    throw invalid_command_line_argument_exceptiont(
+      "conflicting solver options: " + solver_flags[0] + " and " +
+        solver_flags[1] + " must not be given together",
+      solver_flags[0] + " " + solver_flags[1]);
+  }
+
+  // --fpa is not supported with the incremental SMT2 solver
+  if(cmdline.isset("incremental-smt2-solver") && cmdline.isset("fpa"))
+  {
+    throw invalid_command_line_argument_exceptiont(
+      "--fpa is not supported with --incremental-smt2-solver",
+      "--fpa --incremental-smt2-solver");
+  }
 
   if(cmdline.isset("outfile"))
     options.set_option("outfile", cmdline.get_value("outfile"));

@@ -132,6 +132,17 @@ exprt float_bvt::convert(const exprt &expr) const
       float_expr.rounding_mode(),
       get_spec(expr));
   }
+  else if(expr.id() == ID_floatbv_fma)
+  {
+    const auto &fma_expr = to_floatbv_fma_expr(expr);
+    const ieee_float_spect spec{to_floatbv_type(fma_expr.type())};
+    return fma(
+      fma_expr.op_multiply_lhs(),
+      fma_expr.op_multiply_rhs(),
+      fma_expr.op_add(),
+      fma_expr.rounding_mode(),
+      spec);
+  }
   else if(expr.id()==ID_isnan)
   {
     const auto &op = to_unary_expr(expr).op();
@@ -370,6 +381,10 @@ exprt float_bvt::to_integer(
   const exprt &rm,
   const ieee_float_spect &spec)
 {
+  // Keep in sync with float_utilst::to_integer — the body below is a
+  // line-for-line translation of that function between the exprt and
+  // literalt/bvt APIs.
+
   const unbiased_floatt unpacked=unpack(src, spec);
 
   rounding_mode_bitst rounding_mode_bits(rm);
@@ -377,10 +392,35 @@ exprt float_bvt::to_integer(
   // Right now hard-wired to round-to-zero, which is
   // the usual case in ANSI-C.
 
-  // if the exponent is positive, shift right
-  exprt offset=from_integer(spec.f, signedbv_typet(spec.e));
-  const minus_exprt distance(offset, unpacked.exponent);
-  const lshr_exprt shift_result(unpacked.fraction, distance);
+  const std::size_t fraction_width =
+    to_unsignedbv_type(unpacked.fraction.type()).get_width();
+
+  // Extend the fraction to dest_width if needed, padding with zeros
+  // at the LSB end (like float_utilst does).
+  exprt fraction = unpacked.fraction;
+  std::size_t effective_width = fraction_width;
+
+  if(dest_width > fraction_width)
+  {
+    effective_width = dest_width;
+    fraction = concatenation_exprt(
+      fraction,
+      from_integer(0, unsignedbv_typet(dest_width - fraction_width)),
+      unsignedbv_typet(effective_width));
+  }
+
+  // if the exponent is positive, shift right by (effective_width - 1) minus
+  // the exponent. The shift distance is built in a signed type wide enough to
+  // hold both `effective_width - 1` and the (sign-extended) exponent, so it
+  // does not wrap for wide destination types -- e.g. a narrow source such as
+  // _Float16 (spec.e = 5) converted to a 64-bit integer. Keep in sync with
+  // float_utilst::to_integer.
+  const signedbv_typet distance_type(std::max(
+    static_cast<std::size_t>(spec.e), address_bits(effective_width) + 1));
+  const exprt offset = from_integer(effective_width - 1, distance_type);
+  const minus_exprt distance(
+    offset, typecast_exprt(unpacked.exponent, distance_type));
+  const lshr_exprt shift_result(fraction, distance);
 
   // if the exponent is negative, we have zero anyways
   exprt result=shift_result;
@@ -823,6 +863,154 @@ exprt float_bvt::div(
   return rounder(result, rm, spec);
 }
 
+exprt float_bvt::fma(
+  const exprt &multiply_lhs,
+  const exprt &multiply_rhs,
+  const exprt &addend,
+  const exprt &rm,
+  const ieee_float_spect &spec) const
+{
+  // Fused multiply-add: round(multiply_lhs * multiply_rhs + addend) with single
+  // rounding.  Multiply at double width (exact), add at double width (exact),
+  // then round once.
+
+  const unbiased_floatt unpacked_lhs = unpack(multiply_lhs, spec);
+  const unbiased_floatt unpacked_rhs = unpack(multiply_rhs, spec);
+  const unbiased_floatt unpacked_add = unpack(addend, spec);
+
+  const std::size_t frac_size = spec.f + 1;
+  const std::size_t prod_width = frac_size * 2;
+  const typet prod_frac_type = unsignedbv_typet(prod_width);
+
+  // Exact product: multiply fractions at double width
+  const exprt fraction1 =
+    zero_extend_exprt{unpacked_lhs.fraction, prod_frac_type};
+  const exprt fraction2 =
+    zero_extend_exprt{unpacked_rhs.fraction, prod_frac_type};
+  exprt prod_fraction = mult_exprt(fraction1, fraction2);
+
+  const typet wide_exp_type = signedbv_typet(spec.e + 2);
+  exprt prod_exponent = plus_exprt(
+    typecast_exprt(unpacked_lhs.exponent, wide_exp_type),
+    typecast_exprt(unpacked_rhs.exponent, wide_exp_type));
+  prod_exponent = plus_exprt(prod_exponent, from_integer(1, wide_exp_type));
+
+  // When either multiplicand is zero, the product fraction is all zeros
+  // but prod_exponent is still the sum of the operand exponents, which can
+  // be very large.  During alignment the addend would then be treated as
+  // the smaller operand and shifted out, losing its bits.  Force
+  // prod_exponent to the minimum representable value in that case so the
+  // addend always dominates.
+  exprt product_is_zero = or_exprt{unpacked_lhs.zero, unpacked_rhs.zero};
+  prod_exponent = if_exprt{
+    product_is_zero,
+    from_integer(-(mp_integer(1) << (spec.e)), wide_exp_type),
+    prod_exponent};
+
+  exprt prod_sign = notequal_exprt(unpacked_lhs.sign, unpacked_rhs.sign);
+
+  // Align addend fraction to product width (pad on the right)
+  const std::size_t c_pad = prod_width - frac_size;
+  exprt c_fraction = concatenation_exprt(
+    unpacked_add.fraction,
+    from_integer(0, unsignedbv_typet(c_pad)),
+    prod_frac_type);
+  exprt c_exponent = typecast_exprt(unpacked_add.exponent, wide_exp_type);
+
+  // Add product + c: align fractions by exponent difference
+  exprt exp_diff = minus_exprt(prod_exponent, c_exponent);
+  exprt c_bigger = sign_exprt(exp_diff);
+
+  exprt bigger_exp = if_exprt(c_bigger, c_exponent, prod_exponent);
+  exprt big_frac = if_exprt(c_bigger, c_fraction, prod_fraction);
+  exprt small_frac = if_exprt(c_bigger, prod_fraction, c_fraction);
+
+  exprt distance =
+    typecast_exprt(abs_exprt(exp_diff), unsignedbv_typet(spec.e + 2));
+  exprt limited_dist = limit_distance(distance, prod_width + 3);
+
+  // Pad with 3 guard bits
+  const typet padded_type = unsignedbv_typet(prod_width + 3);
+  exprt big_padded = concatenation_exprt(
+    big_frac, from_integer(0, unsignedbv_typet(3)), padded_type);
+  exprt small_padded = concatenation_exprt(
+    small_frac, from_integer(0, unsignedbv_typet(3)), padded_type);
+
+  // Shift smaller fraction right, tracking sticky bit
+  exprt sticky_bit;
+  exprt small_shifted =
+    sticky_right_shift(small_padded, limited_dist, sticky_bit);
+  small_shifted =
+    bitor_exprt(small_shifted, typecast_exprt(sticky_bit, padded_type));
+
+  // Extend for potential carry/borrow
+  const typet sum_type = unsignedbv_typet(prod_width + 5);
+  exprt big_ext = zero_extend_exprt{big_padded, sum_type};
+  exprt small_ext = zero_extend_exprt{small_shifted, sum_type};
+
+  // Add or subtract based on signs
+  exprt subtract_lit = notequal_exprt(prod_sign, unpacked_add.sign);
+  exprt sum = if_exprt(
+    subtract_lit,
+    minus_exprt(big_ext, small_ext),
+    plus_exprt(big_ext, small_ext));
+
+  // Handle negative result (from subtraction)
+  exprt fraction_sign =
+    sign_exprt(typecast_exprt(sum, signedbv_typet(prod_width + 5)));
+  sum = if_exprt(
+    fraction_sign,
+    unary_minus_exprt(typecast_exprt(sum, signedbv_typet(prod_width + 5))),
+    typecast_exprt(sum, signedbv_typet(prod_width + 5)));
+  sum = typecast_exprt(sum, sum_type);
+
+  unbiased_floatt result;
+  result.fraction = sum;
+  result.exponent = plus_exprt(
+    typecast_exprt(bigger_exp, signedbv_typet(spec.e + 3)),
+    from_integer(2, signedbv_typet(spec.e + 3)));
+
+  // NaN
+  exprt prod_inf = or_exprt(unpacked_lhs.infinity, unpacked_rhs.infinity);
+  result.NaN = disjunction(
+    {isnan(multiply_lhs, spec),
+     isnan(multiply_rhs, spec),
+     isnan(addend, spec),
+     and_exprt(unpacked_lhs.zero, unpacked_rhs.infinity),
+     and_exprt(unpacked_rhs.zero, unpacked_lhs.infinity),
+     and_exprt(
+       and_exprt(prod_inf, unpacked_add.infinity),
+       notequal_exprt(prod_sign, unpacked_add.sign))});
+
+  // Infinity
+  result.infinity =
+    and_exprt(not_exprt(result.NaN), or_exprt(prod_inf, unpacked_add.infinity));
+
+  // An exact zero result: as in add_sub, this can be decided before rounding.
+  result.zero = and_exprt{
+    not_exprt{or_exprt{result.infinity, result.NaN}},
+    equal_exprt{result.fraction, from_integer(0, result.fraction.type())}};
+
+  // Sign. As for addition, an infinite result takes the sign of the infinite
+  // operand, and an exact zero result is negative only if both the product
+  // and the addend are, or, when rounding towards minus infinity, if either
+  // of them is.
+  exprt add_sub_sign = notequal_exprt(
+    if_exprt(c_bigger, unpacked_add.sign, prod_sign), fraction_sign);
+  exprt infinity_sign = if_exprt{prod_inf, prod_sign, unpacked_add.sign};
+  rounding_mode_bitst rounding_mode_bits{rm};
+  exprt zero_sign = if_exprt{
+    rounding_mode_bits.round_to_minus_inf,
+    or_exprt{prod_sign, unpacked_add.sign},
+    and_exprt{prod_sign, unpacked_add.sign}};
+  result.sign = if_exprt{
+    result.infinity,
+    infinity_sign,
+    if_exprt{result.zero, zero_sign, add_sub_sign}};
+
+  return rounder(result, rm, spec);
+}
+
 exprt float_bvt::relation(
   const exprt &src1,
   relt rel,
@@ -1169,8 +1357,8 @@ exprt float_bvt::fraction_rounding_decision(
   // round to zero
   false_exprt round_to_zero;
 
-  // round to away
-  const auto round_to_away = or_exprt(rounding_bit, sticky_bit);
+  // round-to-nearest (ties to away)
+  const auto round_to_away = rounding_bit;
 
   // now select appropriate one
   // clang-format off

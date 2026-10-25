@@ -48,8 +48,10 @@ target_link_libraries(c2btor cbmc-lib)
 endif()
 install(TARGETS c2btor DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT c2btor)
 
-# Product-specific shell completion.
+# Product-specific command documentation and completion.
 if(NOT WIN32)
+  install(FILES ${CMAKE_SOURCE_DIR}/doc/man/c2btor.1
+    DESTINATION ${CMAKE_INSTALL_MANDIR}/man1 COMPONENT c2btor OPTIONAL)
   find_program(BASH_PROGRAM bash REQUIRED)
   set(c2btor_completion "${CMAKE_CURRENT_BINARY_DIR}/c2btor.sh")
   add_custom_command(OUTPUT "${c2btor_completion}"
@@ -66,13 +68,11 @@ if(NOT WIN32)
     DESTINATION etc/bash_completion.d RENAME c2btor COMPONENT c2btor)
 endif()
 
-install(FILES ${CMAKE_SOURCE_DIR}/LICENSE ${CMAKE_SOURCE_DIR}/LICENSE.c2btor
-  ${CMAKE_SOURCE_DIR}/README.md ${CMAKE_SOURCE_DIR}/README.zh-CN.md
+install(FILES ${CMAKE_SOURCE_DIR}/README.md ${CMAKE_SOURCE_DIR}/README.en.md
   DESTINATION ${CMAKE_INSTALL_DATADIR}/doc/c2btor COMPONENT c2btor)
+install(DIRECTORY ${CMAKE_SOURCE_DIR}/LICENSES/
+  DESTINATION ${CMAKE_INSTALL_DATADIR}/doc/c2btor/LICENSES COMPONENT c2btor)
 
 install(FILES
-  ${CMAKE_SOURCE_DIR}/scripts/c2btor_witness.py
-  ${CMAKE_SOURCE_DIR}/scripts/c2btor_solver.py
-  ${CMAKE_SOURCE_DIR}/scripts/c2btor_model_contract.py
-  ${CMAKE_SOURCE_DIR}/scripts/run_witness_svcomp.py
+  ${CMAKE_SOURCE_DIR}/scripts/requirements-witness.txt
   DESTINATION ${CMAKE_INSTALL_DATADIR}/c2btor/scripts COMPONENT c2btor)

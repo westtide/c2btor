@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: BSD-4-Clause
+// SPDX-FileCopyrightText: 2026 C2BTOR contributors
+
 #ifndef CPROVER_GOTO_BTOR2_LOWER_RECURSIVE_CALLS_H
 #define CPROVER_GOTO_BTOR2_LOWER_RECURSIVE_CALLS_H
 class goto_modelt;

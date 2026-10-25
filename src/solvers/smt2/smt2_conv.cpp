@@ -17,8 +17,10 @@ Author: Daniel Kroening, kroening@kroening.com
 #include <util/byte_operators.h>
 #include <util/c_types.h>
 #include <util/config.h>
+#include <util/exception_utils.h>
 #include <util/expr_iterator.h>
 #include <util/expr_util.h>
+#include <util/find_symbols.h>
 #include <util/fixedbv.h>
 #include <util/floatbv_expr.h>
 #include <util/format_expr.h>
@@ -46,6 +48,7 @@ Author: Daniel Kroening, kroening@kroening.com
 #include "smt2_tokenizer.h"
 
 #include <cstdint>
+#include <map>
 
 // Mark different kinds of error conditions
 
@@ -63,14 +66,7 @@ smt2_convt::smt2_convt(
   const std::string &_logic,
   solvert _solver,
   std::ostream &_out)
-  : use_FPA_theory(false),
-    use_array_of_bool(false),
-    use_as_const(false),
-    use_check_sat_assuming(false),
-    use_datatypes(false),
-    use_lambda_for_array(false),
-    emit_set_logic(true),
-    ns(_ns),
+  : ns(_ns),
     out(_out),
     benchmark(_benchmark),
     notes(_notes),
@@ -108,15 +104,6 @@ smt2_convt::smt2_convt(
     emit_set_logic = false;
     break;
 
-  case solvert::CVC3:
-    break;
-
-  case solvert::CVC4:
-    logic = "ALL";
-    use_array_of_bool = true;
-    use_as_const = true;
-    break;
-
   case solvert::CVC5:
     logic = "ALL";
     use_FPA_theory = true;
@@ -134,7 +121,11 @@ smt2_convt::smt2_convt(
 
   case solvert::Z3:
     use_array_of_bool = true;
-    use_as_const = true;
+    // `as const` is disabled because of a soundness issue in Z3,
+    // see https://github.com/Z3Prover/z3/issues/9550. Revisit once
+    // the upstream bug is fixed and we can bump the minimum Z3
+    // version accordingly.
+    use_as_const = false;
     use_check_sat_assuming = true;
     use_lambda_for_array = true;
     emit_set_logic = false;
@@ -185,8 +176,6 @@ void smt2_convt::write_header()
   case solvert::BOOLECTOR: out << "; Generated for Boolector\n"; break;
   case solvert::CPROVER_SMT2:
     out << "; Generated for the CPROVER SMT2 solver\n"; break;
-  case solvert::CVC3: out << "; Generated for CVC 3\n"; break;
-  case solvert::CVC4: out << "; Generated for CVC 4\n"; break;
   case solvert::CVC5: out << "; Generated for CVC 5\n"; break;
   case solvert::MATHSAT: out << "; Generated for MathSAT\n"; break;
   case solvert::YICES: out << "; Generated for Yices\n"; break;
@@ -209,7 +198,9 @@ void smt2_convt::write_footer()
 {
   out << "\n";
 
-  // fix up the object sizes
+  // Output object size definitions
+  // Note: object_sizes is std::map, so iteration is deterministic (sorted by
+  // key)
   for(const auto &object : object_sizes)
     define_object_size(object.second, object.first);
 
@@ -243,6 +234,9 @@ void smt2_convt::write_footer()
 
   if(solver!=solvert::BOOLECTOR)
   {
+    // Output get-value commands for all identifiers
+    // Note: smt2_identifiers is std::set, so iteration is deterministic
+    // (sorted)
     for(const auto &id : smt2_identifiers)
       out << "(get-value (" << id << "))"
           << "\n";
@@ -254,34 +248,6 @@ void smt2_convt::write_footer()
 
   out << "; end of SMT2 file"
       << "\n";
-}
-
-/// Returns true iff \p type has effective width of zero bits.
-static bool is_zero_width(const typet &type, const namespacet &ns)
-{
-  if(type.id() == ID_empty)
-    return true;
-  else if(type.id() == ID_struct_tag)
-    return is_zero_width(ns.follow_tag(to_struct_tag_type(type)), ns);
-  else if(type.id() == ID_union_tag)
-    return is_zero_width(ns.follow_tag(to_union_tag_type(type)), ns);
-  else if(type.id() == ID_struct || type.id() == ID_union)
-  {
-    for(const auto &comp : to_struct_union_type(type).components())
-    {
-      if(!is_zero_width(comp.type(), ns))
-        return false;
-    }
-    return true;
-  }
-  else if(auto array_type = type_try_dynamic_cast<array_typet>(type))
-  {
-    // we ignore array_type->size().is_zero() for now as there may be
-    // out-of-bounds accesses that we need to model
-    return is_zero_width(array_type->element_type(), ns);
-  }
-  else
-    return false;
 }
 
 void smt2_convt::define_object_size(
@@ -339,7 +305,7 @@ exprt smt2_convt::get(const exprt &expr) const
 {
   if(expr.id()==ID_symbol)
   {
-    const irep_idt &id=to_symbol_expr(expr).get_identifier();
+    const irep_idt &id = to_symbol_expr(expr).identifier();
 
     identifier_mapt::const_iterator it=identifier_map.find(id);
 
@@ -541,17 +507,21 @@ constant_exprt smt2_convt::parse_literal(
   }
   else if(
     src.get_sub().size() == 3 &&
-    src.get_sub()[0].id() == "root-obj") // (root-obj (+ ...) 1)
+    src.get_sub()[0].id() == "root-obj") // (root-obj (+ ...) <index>)
   {
     // Z3 emits these while there isn't an agreed-upon standard for representing
     // algebraic numbers just yet. https://smt-comp.github.io/2023/model.html
     // gave some proposals, but these don't seem to have been implemented.
     // For now, we use DATA_INVARIANT as our parsing may be overly restrictive.
     // Eventually, these should become proper, user-facing exceptions.
+    //
+    // The third element is the 1-based index identifying which real root of
+    // the polynomial Z3 chose for its model. We do not constrain its value
+    // because algebraic_numbert tracks only the polynomial, not the specific
+    // root, so any root of the same polynomial maps to the same expression.
     DATA_INVARIANT_WITH_DIAGNOSTICS(
       src.get_sub()[1].id().empty() && src.get_sub()[1].get_sub().size() == 3 &&
-        src.get_sub()[1].get_sub()[0].id() == "+" &&
-        src.get_sub()[2].id() == "1",
+        src.get_sub()[1].get_sub()[0].id() == "+",
       "unexpected root-obj expression",
       src.pretty());
     irept sum_rhs = src.get_sub()[1].get_sub()[2];
@@ -606,7 +576,7 @@ constant_exprt smt2_convt::parse_literal(
   }
   else if(type.id() == ID_range)
   {
-    return from_integer(value + to_range_type(type).get_from(), type);
+    return from_integer(value + to_integer_range_type(type).from(), type);
   }
   else
     UNREACHABLE_BECAUSE(
@@ -670,6 +640,12 @@ void smt2_convt::walk_array_tree(
     // Recurse
     walk_array_tree(operands_map, src.get_sub()[1], type);
     const auto index_expr = parse_rec(src.get_sub()[2], type.size().type());
+    if(!index_expr.is_constant())
+      // The index in a (store array index value) term is not necessarily a
+      // constant: models for unbounded or non-integer-keyed arrays can carry
+      // a symbolic/non-constant index. Such an entry cannot be placed in the
+      // index-keyed operands map, so skip it during model reconstruction.
+      return;
     const constant_exprt index_constant = to_constant_expr(index_expr);
     mp_integer tempint;
     bool failure = to_integer(index_constant, tempint);
@@ -1188,6 +1164,31 @@ std::string smt2_convt::type2id(const typet &type) const
   {
     return "A" + type2id(to_array_type(type).element_type());
   }
+  else if(type.id() == ID_integer)
+  {
+    return "Int";
+  }
+  else if(type.id() == ID_real)
+  {
+    return "Real";
+  }
+  else if(type.id() == ID_string)
+  {
+    return "String";
+  }
+  else if(type.id() == ID_regex)
+  {
+    return "RegLan";
+  }
+  else if(type.id() == ID_mathematical_function)
+  {
+    std::string result = "MF";
+    const auto &mf = to_mathematical_function_type(type);
+    for(const auto &d : mf.domain())
+      result += "_" + type2id(d);
+    result += "_" + type2id(mf.codomain());
+    return result;
+  }
   else
   {
     UNREACHABLE;
@@ -1207,7 +1208,7 @@ void smt2_convt::convert_floatbv(const exprt &expr)
 
   if(expr.id()==ID_symbol)
   {
-    const irep_idt &id = to_symbol_expr(expr).get_identifier();
+    const irep_idt &id = to_symbol_expr(expr).identifier();
     out << convert_identifier(id);
     return;
   }
@@ -1261,7 +1262,7 @@ void smt2_convt::convert_expr(const exprt &expr)
   // huge monster case split over expression id
   if(expr.id()==ID_symbol)
   {
-    const irep_idt &id = to_symbol_expr(expr).get_identifier();
+    const irep_idt &id = to_symbol_expr(expr).identifier();
     DATA_INVARIANT(!id.empty(), "symbol must have identifier");
     out << convert_identifier(id);
   }
@@ -1301,9 +1302,45 @@ void smt2_convt::convert_expr(const exprt &expr)
   {
     convert_constant(to_constant_expr(expr));
   }
+  else if(expr.id() == ID_concatenation)
+  {
+    DATA_INVARIANT_WITH_DIAGNOSTICS(
+      !expr.operands().empty(),
+      "concatenation expression should have at least one operand",
+      expr.id_string());
+
+    // collect non-zero-width operands (zero-width not allowed by SMT-LIB)
+    exprt::operandst non_zero_width_ops;
+    for(const auto &op : expr.operands())
+    {
+      if(!is_zero_width(op.type(), ns))
+        non_zero_width_ops.push_back(op);
+    }
+
+    DATA_INVARIANT(
+      !non_zero_width_ops.empty(),
+      "concatenation must have at least one non-zero-width operand");
+
+    if(non_zero_width_ops.size() == 1)
+    {
+      // unary concat is not valid SMT-LIB; emit the operand directly
+      flatten2bv(non_zero_width_ops.front());
+    }
+    else
+    {
+      out << "(concat";
+
+      for(const auto &op : non_zero_width_ops)
+      {
+        out << ' ';
+        flatten2bv(op);
+      }
+
+      out << ')';
+    }
+  }
   else if(
-    expr.id() == ID_concatenation || expr.id() == ID_bitand ||
-    expr.id() == ID_bitor || expr.id() == ID_bitxor)
+    expr.id() == ID_bitand || expr.id() == ID_bitor || expr.id() == ID_bitxor)
   {
     DATA_INVARIANT_WITH_DIAGNOSTICS(
       !expr.operands().empty(),
@@ -1413,7 +1450,7 @@ void smt2_convt::convert_expr(const exprt &expr)
     }
     else if(type.id() == ID_range)
     {
-      auto &range_type = to_range_type(type);
+      auto &range_type = to_integer_range_type(type);
       PRECONDITION(type == unary_minus_expr.op().type());
       // turn -x into 0-x
       auto minus_expr =
@@ -1551,7 +1588,7 @@ void smt2_convt::convert_expr(const exprt &expr)
       if(expr.id() == ID_nand)
         out << "(and";
       else if(expr.id() == ID_nor)
-        out << "(and";
+        out << "(or";
       else if(expr.id() == ID_xnor)
         out << "(xor";
       else
@@ -1703,6 +1740,10 @@ void smt2_convt::convert_expr(const exprt &expr)
   else if(expr.id() == ID_floatbv_rem)
   {
     convert_floatbv_rem(to_binary_expr(expr));
+  }
+  else if(expr.id() == ID_floatbv_fma)
+  {
+    convert_floatbv_fma(to_floatbv_fma_expr(expr));
   }
   else if(expr.id()==ID_address_of)
   {
@@ -1883,7 +1924,7 @@ void smt2_convt::convert_expr(const exprt &expr)
     out << "(! ";
     convert(named_term_expr.value());
     out << " :named "
-        << convert_identifier(named_term_expr.symbol().get_identifier()) << ')';
+        << convert_identifier(named_term_expr.symbol().identifier()) << ')';
   }
   else if(expr.id()==ID_with)
   {
@@ -2079,6 +2120,10 @@ void smt2_convt::convert_expr(const exprt &expr)
 
     mp_integer times = numeric_cast_v<mp_integer>(replication_expr.times());
 
+    // SMT-LIB requires that repeat is given a number of repetitions that is at
+    // least 1.
+    PRECONDITION(times >= 1);
+
     out << "((_ repeat " << times << ") ";
     flatten2bv(replication_expr.op());
     out << ")";
@@ -2268,32 +2313,39 @@ void smt2_convt::convert_expr(const exprt &expr)
       out << " ((_ sign_extend 1) ";
       convert_expr(op1);
       out << ")))) "; // sign_extend, bvadd/sub
+
+      const std::string overflow_condition =
+        "(not (= ((_ extract " + std::to_string(width) + " " +
+        std::to_string(width) + ") ?sum) ((_ extract " +
+        std::to_string(width - 1) + " " + std::to_string(width - 1) +
+        ") ?sum)))";
+
       if(keep_result)
       {
+        const std::string result =
+          "((_ extract " + std::to_string(width - 1) + " 0) ?sum)";
+
         if(use_datatypes)
         {
           const std::string &smt_typename = datatype_map.at(expr.type());
 
           // use the constructor for the Z3 datatype
-          out << "(mk-" << smt_typename;
+          out << "(mk-" << smt_typename << ' ' << result << ' '
+              << overflow_condition << ')';
         }
         else
-          out << "(concat";
+        {
+          // The struct is flattened into a bit-vector. The first component
+          // (the result) occupies the least-significant bits, so the overflow
+          // flag is the first operand of the concatenation -- cf. flatten2bv,
+          // convert_struct and convert_member.
+          out << "(concat (ite " << overflow_condition << " #b1 #b0) " << result
+              << ')';
+        }
+      }
+      else
+        out << overflow_condition;
 
-        out << " ((_ extract " << width - 1 << " 0) ?sum) ";
-        if(!use_datatypes)
-          out << "(ite ";
-      }
-      out << "(not (= "
-                   "((_ extract " << width << " " << width << ") ?sum) "
-                   "((_ extract " << (width-1) << " " << (width-1) << ") ?sum)";
-      out << "))"; // =, not
-      if(keep_result)
-      {
-        if(!use_datatypes)
-          out << " #b1 #b0)";
-        out << ")"; // concat
-      }
       out << ")"; // let
     }
     else if(op_type.id()==ID_unsignedbv ||
@@ -2308,7 +2360,12 @@ void smt2_convt::convert_expr(const exprt &expr)
       convert_expr(op1);
       out << "))))"; // zero_extend, bvsub/bvadd
       if(keep_result && !use_datatypes)
+      {
+        // ?sum is already the correct flattening of the struct: the result
+        // occupies the least-significant `width` bits and the carry-out (the
+        // overflow flag) is the most-significant bit.
         out << " ?sum";
+      }
       else
       {
         if(keep_result && use_datatypes)
@@ -2361,33 +2418,39 @@ void smt2_convt::convert_expr(const exprt &expr)
       out << ") ((_ sign_extend " << width << ") ";
       convert_expr(op1);
       out << ")) )) ";
+
+      const std::string bound = "(_ bv" + integer2string(power(2, width - 1)) +
+                                " " + std::to_string(width * 2) + ")";
+      const std::string overflow_condition =
+        "(or (bvsge prod " + bound + ") (bvslt prod (bvneg " + bound + ")))";
+
       if(keep_result)
       {
+        const std::string result =
+          "((_ extract " + std::to_string(width - 1) + " 0) prod)";
+
         if(use_datatypes)
         {
           const std::string &smt_typename = datatype_map.at(expr.type());
 
           // use the constructor for the Z3 datatype
-          out << "(mk-" << smt_typename;
+          out << "(mk-" << smt_typename << ' ' << result << ' '
+              << overflow_condition << ')';
         }
         else
-          out << "(concat";
+        {
+          // The struct is flattened into a bit-vector. The first component
+          // (the result) occupies the least-significant bits, so the overflow
+          // flag is the first operand of the concatenation -- cf. flatten2bv,
+          // convert_struct and convert_member.
+          out << "(concat (ite " << overflow_condition << " #b1 #b0) " << result
+              << ')';
+        }
+      }
+      else
+        out << overflow_condition;
 
-        out << " ((_ extract " << width - 1 << " 0) prod) ";
-        if(!use_datatypes)
-          out << "(ite ";
-      }
-      out << "(or (bvsge prod (_ bv" << power(2, width-1) << " "
-          << width*2 << "))";
-      out << " (bvslt prod (bvneg (_ bv" << power(2, width - 1) << " "
-          << width * 2 << "))))";
-      if(keep_result)
-      {
-        if(!use_datatypes)
-          out << " #b1 #b0)";
-        out << ")"; // concat
-      }
-      out << ")";
+      out << ")"; // let
     }
     else if(op_type.id()==ID_unsignedbv)
     {
@@ -2396,30 +2459,38 @@ void smt2_convt::convert_expr(const exprt &expr)
       out << ") ((_ zero_extend " << width << ") ";
       convert_expr(op1);
       out << ")))) ";
+
+      const std::string overflow_condition =
+        "(bvuge prod (_ bv" + integer2string(power(2, width)) + " " +
+        std::to_string(width * 2) + "))";
+
       if(keep_result)
       {
+        const std::string result =
+          "((_ extract " + std::to_string(width - 1) + " 0) prod)";
+
         if(use_datatypes)
         {
           const std::string &smt_typename = datatype_map.at(expr.type());
 
           // use the constructor for the Z3 datatype
-          out << "(mk-" << smt_typename;
+          out << "(mk-" << smt_typename << ' ' << result << ' '
+              << overflow_condition << ')';
         }
         else
-          out << "(concat";
+        {
+          // The struct is flattened into a bit-vector. The first component
+          // (the result) occupies the least-significant bits, so the overflow
+          // flag is the first operand of the concatenation -- cf. flatten2bv,
+          // convert_struct and convert_member.
+          out << "(concat (ite " << overflow_condition << " #b1 #b0) " << result
+              << ')';
+        }
+      }
+      else
+        out << overflow_condition;
 
-        out << " ((_ extract " << width - 1 << " 0) prod) ";
-        if(!use_datatypes)
-          out << "(ite ";
-      }
-      out << "(bvuge prod (_ bv" << power(2, width) << " " << width * 2 << "))";
-      if(keep_result)
-      {
-        if(!use_datatypes)
-          out << " #b1 #b0)";
-        out << ")"; // concat
-      }
-      out << ")";
+      out << ")"; // let
     }
     else
       INVARIANT_WITH_DIAGNOSTICS(
@@ -2676,8 +2747,179 @@ void smt2_convt::convert_expr(const exprt &expr)
   else if(expr.id() == ID_function_application)
   {
     const auto &function_application_expr = to_function_application_expr(expr);
+
+    // Front-ends such as Strata represent string and regex operations as
+    // applications of the CPROVER string built-in functions
+    // (ID_cprover_string_*_func / ID_cprover_regex_*_func). In the SMT-LIB
+    // back-end these carry SMT-LIB-native operands (String / RegLan, and
+    // scalar Int/bit-vector index arguments) -- as opposed to the
+    // refined-string (length, char-array) representation that the SAT string
+    // solver in src/solvers/strings consumes -- and we lower them directly to
+    // the SMT-LIB theory-of-strings operators here.
+    //
+    // Operand contract (what a front-end must emit): arguments are SMT-LIB
+    // native and in SMT-LIB operand order, so most built-ins lower to a flat
+    // application (op arg0 arg1 ...). Specifically:
+    //   concat(s, t, ...)          -> (str.++ s t ...)
+    //   length(s)                  -> (str.len s)             : Int result
+    //   char_at(s, i)              -> (str.at s i)            : 1-char String
+    //   substring(s, off, len)     -> (str.substr s off len)  : offset+length
+    //   contains(haystack, needle) -> (str.contains haystack needle)
+    //   is_prefix(prefix, s)       -> (str.prefixof prefix s)
+    //   is_suffix(suffix, s)       -> (str.suffixof suffix s)
+    //   replace(s, old, new)       -> (str.replace s old new) : first match
+    //   equal(s, t)                -> (= s t)
+    //   index_of(s, sub[, off])    -> (str.indexof s sub off) : off defaults 0
+    //   startswith(s, prefix)      -> (str.prefixof prefix s)
+    //   endswith(s, suffix)        -> (str.suffixof suffix s)
+    //   is_empty(s)                -> (= s "")
+    // and the regex operators map to str.to_re / str.in_re and the re.* family
+    // (re.range, re.++, re.*, re.+, re.opt, re.loop, re.union, re.inter,
+    // re.comp, re.diff, re.all, re.allchar, re.none). Built-ins without an
+    // exact SMT-LIB theory-of-strings counterpart (e.g. compare_to, of_int,
+    // parse_int, format, case folding, trim) are intentionally not lowered and
+    // fall through to the generic function-application handling below.
+    //
+    // Note: this lowering is specific to the (non-incremental) smt2_convt
+    // back-end. The incremental SMT back-end uses a separate converter
+    // (src/solvers/smt2_incremental) and does not support these built-ins.
+    irep_idt fn_id;
+    if(function_application_expr.function().id() == ID_symbol)
+      fn_id =
+        to_symbol_expr(function_application_expr.function()).get_identifier();
+
+    const auto &args = function_application_expr.arguments();
+
+    // Flat-application operators: lowered to (op arg0 arg1 ...) with operands
+    // in the order given. The operands are interpreted in SMT-LIB order, which
+    // can DIVERGE from the canonical SAT string solver's built-ins -- notably
+    // substring is (string, offset, length) per SMT-LIB str.substr, NOT the
+    // SAT solver's (string, start, end), and index_of's optional third operand
+    // is a start offset. A front-end must emit these built-ins with SMT-LIB
+    // operand semantics; the soundness guard below only catches refined-string
+    // (array/pointer) operands, not a mismatched integer operand pair.
+    static const std::map<irep_idt, std::string> flat_string_ops = {
+      // string operators
+      {ID_cprover_string_concat_func, "str.++"},
+      {ID_cprover_string_length_func, "str.len"},
+      {ID_cprover_string_substring_func, "str.substr"},
+      {ID_cprover_string_char_at_func, "str.at"},
+      {ID_cprover_string_contains_func, "str.contains"},
+      {ID_cprover_string_is_prefix_func, "str.prefixof"},
+      {ID_cprover_string_is_suffix_func, "str.suffixof"},
+      {ID_cprover_string_replace_func, "str.replace"},
+      {ID_cprover_string_equal_func, "="},
+      // regex operators
+      {ID_cprover_string_to_regex_func, "str.to_re"},
+      {ID_cprover_string_in_regex_func, "str.in_re"},
+      {ID_cprover_regex_range_func, "re.range"},
+      {ID_cprover_regex_concat_func, "re.++"},
+      {ID_cprover_regex_star_func, "re.*"},
+      {ID_cprover_regex_plus_func, "re.+"},
+      {ID_cprover_regex_opt_func, "re.opt"},
+      {ID_cprover_regex_union_func, "re.union"},
+      {ID_cprover_regex_inter_func, "re.inter"},
+      {ID_cprover_regex_comp_func, "re.comp"},
+      {ID_cprover_regex_diff_func, "re.diff"},
+      {ID_cprover_regex_all_func, "re.all"},
+      {ID_cprover_regex_allchar_func, "re.allchar"},
+      {ID_cprover_regex_none_func, "re.none"}};
+
+    std::string smt_name;
+    if(auto it = flat_string_ops.find(fn_id); it != flat_string_ops.end())
+      smt_name = it->second;
+
+    // Operators needing a fixed operand rearrangement or wrapper.
+    const bool is_index_of = fn_id == ID_cprover_string_index_of_func;
+    const bool is_startswith = fn_id == ID_cprover_string_startswith_func;
+    const bool is_endswith = fn_id == ID_cprover_string_endswith_func;
+    const bool is_is_empty = fn_id == ID_cprover_string_is_empty_func;
+    const bool is_regex_loop = fn_id == ID_cprover_regex_loop_func;
+
+    if(
+      !smt_name.empty() || is_index_of || is_startswith || is_endswith ||
+      is_is_empty || is_regex_loop)
+    {
+      // Soundness guard: this native lowering expects SMT-LIB-native operands.
+      // The same cprover_string_*_func ids are also used with the
+      // refined-string (length, char-array) representation consumed by the SAT
+      // string solver; such an application carries array- or pointer-typed
+      // operands and must NOT be lowered here, as doing so would be silently
+      // unsound. Reject it with a clear message instead.
+      for(const auto &arg : args)
+      {
+        if(arg.type().id() == ID_array || arg.type().id() == ID_pointer)
+        {
+          throw unsupported_operation_exceptiont(
+            "string/regex built-in '" + id2string(fn_id) +
+            "' reached the SMT-LIB string lowering with a refined-string "
+            "(array/pointer) operand; the refined-string representation "
+            "requires the SAT string solver (--refine-strings)");
+        }
+      }
+
+      if(is_index_of)
+      {
+        // str.indexof requires three operands; default the start offset to the
+        // SMT-LIB Int 0 when the front-end omits it.
+        PRECONDITION(args.size() == 2 || args.size() == 3);
+        out << "(str.indexof ";
+        convert_expr(args[0]);
+        out << ' ';
+        convert_expr(args[1]);
+        out << ' ';
+        if(args.size() == 3)
+          convert_expr(args[2]);
+        else
+          out << '0';
+        out << ')';
+      }
+      else if(is_startswith || is_endswith)
+      {
+        // startswith(s, prefix) / endswith(s, suffix): the affix is the second
+        // argument, but SMT-LIB str.prefixof/str.suffixof take the affix first.
+        PRECONDITION(args.size() == 2);
+        out << (is_startswith ? "(str.prefixof " : "(str.suffixof ");
+        convert_expr(args[1]);
+        out << ' ';
+        convert_expr(args[0]);
+        out << ')';
+      }
+      else if(is_is_empty)
+      {
+        // is_empty(s) -> (= s "")
+        PRECONDITION(args.size() == 1);
+        out << "(= ";
+        convert_expr(args[0]);
+        out << " \"\")";
+      }
+      else if(is_regex_loop)
+      {
+        // re.loop is an indexed SMT-LIB operator: ((_ re.loop lo hi) r), where
+        // lo and hi are numerals. Contract: loop(regex, lo, hi) with lo/hi
+        // constant naturals.
+        PRECONDITION(args.size() == 3);
+        const auto lo = numeric_cast_v<mp_integer>(to_constant_expr(args[1]));
+        const auto hi = numeric_cast_v<mp_integer>(to_constant_expr(args[2]));
+        out << "((_ re.loop " << lo << ' ' << hi << ") ";
+        convert_expr(args[0]);
+        out << ')';
+      }
+      else if(args.empty())
+        out << smt_name;
+      else
+      {
+        out << '(' << smt_name;
+        for(const auto &arg : args)
+        {
+          out << ' ';
+          convert_expr(arg);
+        }
+        out << ')';
+      }
+    }
     // do not use parentheses if there function is a constant
-    if(function_application_expr.arguments().empty())
+    else if(function_application_expr.arguments().empty())
     {
       convert_expr(function_application_expr.function());
     }
@@ -2698,6 +2940,57 @@ void smt2_convt::convert_expr(const exprt &expr)
     // use the lowering
     convert_expr(to_cond_expr(expr).lower());
   }
+  else if(expr.id() == ID_reduction_and)
+  {
+    convert_expr(to_reduction_and_expr(expr).lower());
+  }
+  else if(expr.id() == ID_reduction_nand)
+  {
+    convert_expr(to_reduction_nand_expr(expr).lower());
+  }
+  else if(expr.id() == ID_reduction_or)
+  {
+    convert_expr(to_reduction_or_expr(expr).lower());
+  }
+  else if(expr.id() == ID_reduction_nor)
+  {
+    convert_expr(to_reduction_nor_expr(expr).lower());
+  }
+  else if(expr.id() == ID_reduction_xor)
+  {
+    // This is the parity of the operand. No SMT-LIB 2 equivalent.
+    // Do bit-wise. SMT-LIB 3.0 could do this with "fold bvxor".
+    auto &op = to_reduction_xor_expr(expr).op();
+    auto width = to_bitvector_type(op.type()).get_width();
+    PRECONDITION(width >= 1);
+
+    if(width == 1)
+    {
+      out << "(= ";
+      flatten2bv(op);
+      out << " #b1)";
+    }
+    else
+    {
+      out << "(let ((?rop ";
+      flatten2bv(op);
+      out << ")) ";
+
+      // XOR all bits: extract each bit and use multi-ary bvxor
+      out << "(= (bvxor";
+      for(std::size_t i = 0; i < width; i++)
+        out << " ((_ extract " << i << " " << i << ") ?rop)";
+      out << ") #b1)";
+
+      out << ')'; // let
+    }
+  }
+  else if(expr.id() == ID_reduction_xnor)
+  {
+    // This is the negation of "reduction xor"
+    auto &op = to_reduction_xnor_expr(expr).op();
+    convert_expr(not_exprt{reduction_xor_exprt{op}});
+  }
   else
     INVARIANT_WITH_DIAGNOSTICS(
       false,
@@ -2711,6 +3004,13 @@ void smt2_convt::convert_typecast(const typecast_exprt &expr)
   const exprt &src = expr.op();
 
   typet dest_type = expr.type();
+
+  if(dest_type == src.type()) // identity
+  {
+    convert_expr(src);
+    return;
+  }
+
   if(dest_type.id()==ID_c_enum_tag)
     dest_type=ns.follow_tag(to_c_enum_tag_type(dest_type));
 
@@ -2782,7 +3082,10 @@ void smt2_convt::convert_typecast(const typecast_exprt &expr)
         convert_expr(src); // ignore
       else if(from_width<to_width) // extend
       {
-        if(src_type.id()==ID_signedbv)
+        if(
+          src_type.id() == ID_signedbv ||
+          (src_type.id() == ID_c_enum &&
+           to_c_enum_type(src_type).underlying_type().id() == ID_signedbv))
           out << "((_ sign_extend ";
         else
           out << "((_ zero_extend ";
@@ -3014,10 +3317,12 @@ void smt2_convt::convert_typecast(const typecast_exprt &expr)
           from_width < to_integer_bits,
           "from_width should be smaller than to_integer_bits as other case "
           "have been handled above");
-        if(dest_type.id()==ID_unsignedbv)
+        if(
+          src_type.id() == ID_unsignedbv ||
+          (src_type.id() == ID_c_enum &&
+           to_c_enum_type(src_type).underlying_type().id() == ID_unsignedbv))
         {
-          out << "(_ zero_extend "
-              << (to_integer_bits-from_width) << ") ";
+          out << "((_ zero_extend " << (to_integer_bits - from_width) << ") ";
           convert_expr(src);
           out << ")";
         }
@@ -3143,16 +3448,12 @@ void smt2_convt::convert_typecast(const typecast_exprt &expr)
   }
   else if(dest_type.id()==ID_range)
   {
-    auto &dest_range_type = to_range_type(dest_type);
-    const auto dest_size =
-      dest_range_type.get_to() - dest_range_type.get_from() + 1;
-    const auto dest_width = address_bits(dest_size);
+    auto &dest_range_type = to_integer_range_type(dest_type);
+    const auto dest_width = address_bits(dest_range_type.size());
     if(src_type.id() == ID_range)
     {
-      auto &src_range_type = to_range_type(src_type);
-      const auto src_size =
-        src_range_type.get_to() - src_range_type.get_from() + 1;
-      const auto src_width = address_bits(src_size);
+      auto &src_range_type = to_integer_range_type(src_type);
+      const auto src_width = address_bits(src_range_type.size());
       if(src_width < dest_width)
       {
         out << "((_ zero_extend " << dest_width - src_width << ") ";
@@ -3501,7 +3802,16 @@ void smt2_convt::flatten_array(const exprt &expr)
 {
   const array_typet &array_type = to_array_type(expr.type());
   const auto &size_expr = array_type.size();
-  PRECONDITION(size_expr.is_constant());
+  // Flattening an array to a bit-vector requires a concrete size. Arrays of
+  // unknown or non-constant size (e.g. those indexed by a mathematical
+  // integer) can only be encoded with the SMT-LIB array theory, not
+  // bit-blasted; report that clearly rather than aborting an invariant.
+  if(!size_expr.is_constant())
+  {
+    throw unsupported_operation_exceptiont(
+      "cannot flatten an array of non-constant size to a bit-vector; such an "
+      "array can only be encoded with the SMT-LIB array theory");
+  }
 
   mp_integer size = numeric_cast_v<mp_integer>(to_constant_expr(size_expr));
   CHECK_RETURN_WITH_DIAGNOSTICS(size != 0, "can't convert zero-sized array");
@@ -3718,12 +4028,30 @@ void smt2_convt::convert_constant(const constant_exprt &expr)
   }
   else if(expr_type.id() == ID_range)
   {
-    auto &range_type = to_range_type(expr_type);
-    const auto size = range_type.get_to() - range_type.get_from() + 1;
-    const auto width = address_bits(size);
+    auto &range_type = to_integer_range_type(expr_type);
+    const auto width = address_bits(range_type.size());
     const auto value_int = numeric_cast_v<mp_integer>(expr);
-    out << "(_ bv" << (value_int - range_type.get_from()) << " " << width
-        << ")";
+    out << "(_ bv" << (value_int - range_type.from()) << " " << width << ")";
+  }
+  else if(expr_type.id() == ID_string)
+  {
+    // SMT-LIB 2.6 string literal. The only in-string escape is "" for a double
+    // quote (backslash is literal). Only printable ASCII may appear verbatim;
+    // control and non-ASCII bytes are encoded with the \u{...} hex escape.
+    const std::string &value = id2string(expr.get_value());
+    out << '"';
+    for(char ch : value)
+    {
+      const auto c = static_cast<unsigned char>(ch);
+      if(c == '"')
+        out << "\"\"";
+      else if(c >= 0x20 && c <= 0x7e)
+        out << ch;
+      else
+        out << "\\u{" << std::hex << static_cast<unsigned>(c) << std::dec
+            << '}';
+    }
+    out << '"';
   }
   else
     UNEXPECTEDCASE("unknown constant: "+expr_type.id_string());
@@ -3754,6 +4082,28 @@ void smt2_convt::convert_mod(const mod_exprt &expr)
     else
       out << "(bvsrem ";
 
+    convert_expr(expr.op0());
+    out << " ";
+    convert_expr(expr.op1());
+    out << ")";
+  }
+  else if(expr.type().id() == ID_integer)
+  {
+    // Mathematical integers (mp_integer) truncate toward zero, so the
+    // remainder takes the sign of the dividend; SMT-LIB mod is always
+    // non-negative. Take the remainder of the magnitudes and re-apply the
+    // dividend's sign.
+    out << "(let ((?ma ";
+    convert_expr(expr.op0());
+    out << ") (?mb ";
+    convert_expr(expr.op1());
+    out << ")) (let ((?mr (mod (ite (< ?ma 0) (- ?ma) ?ma)";
+    out << " (ite (< ?mb 0) (- ?mb) ?mb)))) (ite (< ?ma 0) (- ?mr) ?mr)))";
+  }
+  else if(expr.type().id() == ID_natural)
+  {
+    // Naturals are non-negative, so SMT-LIB mod already matches mp_integer.
+    out << "(mod ";
     convert_expr(expr.op0());
     out << " ";
     convert_expr(expr.op1());
@@ -3948,22 +4298,20 @@ void smt2_convt::convert_plus(const plus_exprt &expr)
   }
   else if(expr.type().id() == ID_range)
   {
-    auto &range_type = to_range_type(expr.type());
+    auto &range_type = to_integer_range_type(expr.type());
 
     // These could be chained, i.e., need not be binary,
     // but at least MathSat doesn't like that.
     if(expr.operands().size() == 2)
     {
       // add: lhs + from + rhs + from - from = lhs + rhs + from
-      mp_integer from = range_type.get_from();
-      const auto size = range_type.get_to() - range_type.get_from() + 1;
-      const auto width = address_bits(size);
+      const auto width = address_bits(range_type.size());
 
       out << "(bvadd ";
       convert_expr(expr.op0());
       out << " (bvadd ";
       convert_expr(expr.op1());
-      out << " (_ bv" << range_type.get_from() << ' ' << width
+      out << " (_ bv" << range_type.from() << ' ' << width
           << ")))"; // bv, bvadd, bvadd
     }
     else
@@ -4218,19 +4566,16 @@ void smt2_convt::convert_minus(const minus_exprt &expr)
   }
   else if(expr.type().id() == ID_range)
   {
-    auto &range_type = to_range_type(expr.type());
+    auto &range_type = to_integer_range_type(expr.type());
 
     // sub: lhs + from - (rhs + from) - from = lhs - rhs - from
-    mp_integer from = range_type.get_from();
-    const auto size = range_type.get_to() - range_type.get_from() + 1;
-    const auto width = address_bits(size);
+    const auto width = address_bits(range_type.size());
 
     out << "(bvsub (bvsub ";
     convert_expr(expr.op0());
     out << ' ';
     convert_expr(expr.op1());
-    out << ") (_ bv" << range_type.get_from() << ' ' << width
-        << "))"; // bv, bvsub
+    out << ") (_ bv" << range_type.from() << ' ' << width << "))"; // bv, bvsub
   }
   else
     UNEXPECTEDCASE("unsupported type for -: "+expr.type().id_string());
@@ -4300,11 +4645,32 @@ void smt2_convt::convert_div(const div_exprt &expr)
     expr.type().id() == ID_rational || expr.type().id() == ID_integer ||
     expr.type().id() == ID_natural || expr.type().id() == ID_real)
   {
-    out << "(/ ";
-    convert_expr(expr.op0());
-    out << " ";
-    convert_expr(expr.op1());
-    out << ")";
+    if(expr.type().id() == ID_integer)
+    {
+      // Mathematical integers (mp_integer) truncate division toward zero,
+      // whereas SMT-LIB div floors. Encode truncation: divide the magnitudes
+      // and make the quotient negative iff the operands have opposite signs.
+      out << "(let ((?da ";
+      convert_expr(expr.op0());
+      out << ") (?db ";
+      convert_expr(expr.op1());
+      out << ")) (let ((?dq (div (ite (< ?da 0) (- ?da) ?da)";
+      out << " (ite (< ?db 0) (- ?db) ?db))))";
+      out << " (ite (= (< ?da 0) (< ?db 0)) ?dq (- ?dq))))";
+    }
+    else
+    {
+      // Naturals are non-negative (SMT-LIB div already truncates); rationals
+      // and reals use real division.
+      if(expr.type().id() == ID_natural)
+        out << "(div ";
+      else
+        out << "(/ ";
+      convert_expr(expr.op0());
+      out << " ";
+      convert_expr(expr.op1());
+      out << ")";
+    }
   }
   else
     UNEXPECTEDCASE("unsupported type for /: "+expr.type().id_string());
@@ -4446,6 +4812,28 @@ void smt2_convt::convert_floatbv_rem(const binary_exprt &expr)
       "smt2_convt::convert_floatbv_rem to be implemented when not using "
       "FPA_theory");
   }
+}
+
+void smt2_convt::convert_floatbv_fma(const floatbv_fma_exprt &expr)
+{
+  DATA_INVARIANT(
+    expr.type().id() == ID_floatbv,
+    "type of ieee floating point expression shall be floatbv");
+
+  if(use_FPA_theory)
+  {
+    out << "(fp.fma ";
+    convert_rounding_mode_FPA(expr.rounding_mode());
+    out << " ";
+    convert_expr(expr.op_multiply_lhs());
+    out << " ";
+    convert_expr(expr.op_multiply_rhs());
+    out << " ";
+    convert_expr(expr.op_add());
+    out << ")";
+  }
+  else
+    convert_floatbv(expr);
 }
 
 void smt2_convt::convert_with(const with_exprt &expr)
@@ -4890,11 +5278,29 @@ void smt2_convt::flatten2bv(const exprt &expr)
   }
   else if(type.id()==ID_floatbv)
   {
-    INVARIANT(
-      !use_FPA_theory,
-      "floatbv expressions should be flattened when using FPA theory");
-
-    convert_expr(expr);
+    if(use_FPA_theory)
+    {
+      // A floatbv constant's IEEE-754 interchange bit pattern is exactly its
+      // bit-vector representation, so it is emitted as a literal bit-vector.
+      // This is the only shape that reaches flatten2bv under FPA: a
+      // non-constant float whose bits are read is lowered by
+      // lower_byte_operators into a float typecast, which is handled by the
+      // bvfromfloat round-trip in find_symbols and never reaches here.
+      if(expr.is_constant())
+      {
+        const ieee_float_spect spec(to_floatbv_type(type));
+        const mp_integer value = bvrep2integer(
+          to_constant_expr(expr).get_value(), spec.width(), false);
+        out << "(_ bv" << value << " " << spec.width() << ")";
+      }
+      else
+      {
+        UNEXPECTEDCASE(
+          "flatten2bv of a non-constant FPA-encoded float is unsupported");
+      }
+    }
+    else
+      convert_expr(expr);
   }
   else
     convert_expr(expr);
@@ -4914,7 +5320,7 @@ void smt2_convt::unflatten(
   }
   else if(type.id() == ID_array)
   {
-    PRECONDITION(use_as_const);
+    PRECONDITION(use_as_const || use_lambda_for_array);
 
     if(where == wheret::BEGIN)
       out << "(let ((?ufop" << nesting << " ";
@@ -4935,9 +5341,29 @@ void smt2_convt::unflatten(
       for(mp_integer i = 1; i < size; ++i)
         out << "(store ";
 
-      out << "((as const ";
-      convert_type(array_type);
-      out << ") ";
+      // Build a constant array filled with element 0 as the base, then
+      // overwrite indices 1..N-1 via (store ...).
+      if(use_as_const)
+      {
+        out << "((as const ";
+        convert_type(array_type);
+        out << ") ";
+      }
+      else
+      {
+        INVARIANT(
+          use_lambda_for_array,
+          "unflatten relies on `(lambda ...)` for constant arrays "
+          "when `(as const ...)` is unavailable");
+        // Note: lambda is a Z3/Bitwuzla extension; not part of the
+        // SMT-LIB 2.6 standard.  The bound variable `?ufidx<n>` is
+        // intentionally unused -- the body returns the element-0 value
+        // regardless of its argument, making this semantically
+        // equivalent to `(as const ...)`.
+        out << "(lambda ((?ufidx" << nesting << " ";
+        convert_type(array_type.index_type());
+        out << ")) ";
+      }
       // use element at index 0 as default value
       unflatten(wheret::BEGIN, array_type.element_type(), nesting + 1);
       out << "((_ extract " << subtype_width - 1 << " "
@@ -4984,11 +5410,9 @@ void smt2_convt::unflatten(
 
         std::size_t offset=0;
 
-        std::size_t i=0;
-        for(struct_typet::componentst::const_iterator
-            it=components.begin();
-            it!=components.end();
-            it++, i++)
+        for(struct_typet::componentst::const_iterator it = components.begin();
+            it != components.end();
+            it++)
         {
           if(is_zero_width(it->type(), ns))
             continue;
@@ -5056,12 +5480,18 @@ void smt2_convt::set_to(const exprt &expr, bool value)
 
     if(equal_expr.lhs().id()==ID_symbol)
     {
-      const irep_idt &identifier=
-        to_symbol_expr(equal_expr.lhs()).get_identifier();
+      const irep_idt &identifier =
+        to_symbol_expr(equal_expr.lhs()).identifier();
 
+      // A symbol that is not yet declared and that is equated to an
+      // expression is defined by that expression. This is not possible
+      // when the expression refers to the symbol itself, e.g.,
+      // x == (x & y) | z: such an equality is a constraint on x, and is
+      // asserted below.
       if(
         identifier_map.find(identifier) == identifier_map.end() &&
-        equal_expr.lhs() != equal_expr.rhs())
+        equal_expr.lhs() != equal_expr.rhs() &&
+        !has_symbol_expr(equal_expr.rhs(), identifier, true))
       {
         auto id_entry = identifier_map.insert(
           {identifier, identifiert{equal_expr.lhs().type(), false}});
@@ -5074,6 +5504,28 @@ void smt2_convt::set_to(const exprt &expr, bool value)
         smt2_identifiers.insert(smt2_identifier);
 
         out << "; set_to true (equal)\n";
+
+        // Helper: emit the body of a definition for `smt2_identifier`
+        // -- either a direct `convert_expr(prepared_rhs)` for non-array
+        // or array-theory cases, or a `unflatten ... convert_expr ...
+        // unflatten` reconstruction for array RHSes.  Used twice below
+        // to keep the `declare-fun + assert` and `define-fun` paths in
+        // sync.
+        auto emit_definition_body = [&]()
+        {
+          if(
+            equal_expr.lhs().type().id() != ID_array ||
+            use_array_theory(prepared_rhs))
+          {
+            convert_expr(prepared_rhs);
+          }
+          else
+          {
+            unflatten(wheret::BEGIN, equal_expr.lhs().type());
+            convert_expr(prepared_rhs);
+            unflatten(wheret::END, equal_expr.lhs().type());
+          }
+        };
 
         if(equal_expr.lhs().type().id() == ID_mathematical_function)
         {
@@ -5105,26 +5557,32 @@ void smt2_convt::set_to(const exprt &expr, bool value)
           convert_expr(prepared_rhs);
           out << ')' << ')' << '\n';
         }
+        else if(use_lambda_for_array)
+        {
+          // The body emitted below may contain a `(lambda ...)` from
+          // `unflatten` (used as a stand-in for `(as const ...)` for
+          // back-ends with `use_as_const = false`).  Z3 rejects
+          // `get-value` on symbols whose `define-fun` body contains
+          // a lambda, so we use `declare-fun` + `assert (= ...)` here.
+          // Back-ends with `use_lambda_for_array = false` (the
+          // default, currently every back-end other than Z3) keep
+          // using the `define-fun` form below, so their SMT2 output
+          // is unaffected.
+          out << "(declare-fun " << smt2_identifier;
+          out << " () ";
+          convert_type(equal_expr.lhs().type());
+          out << ")\n";
+          out << "(assert (= " << smt2_identifier << ' ';
+          emit_definition_body();
+          out << "))\n";
+        }
         else
         {
           out << "(define-fun " << smt2_identifier;
           out << " () ";
           convert_type(equal_expr.lhs().type());
           out << ' ';
-          if(
-            equal_expr.lhs().type().id() != ID_array ||
-            use_array_theory(prepared_rhs))
-          {
-            convert_expr(prepared_rhs);
-          }
-          else
-          {
-            unflatten(wheret::BEGIN, equal_expr.lhs().type());
-
-            convert_expr(prepared_rhs);
-
-            unflatten(wheret::END, equal_expr.lhs().type());
-          }
+          emit_definition_body();
           out << ')' << '\n';
         }
 
@@ -5243,6 +5701,15 @@ exprt smt2_convt::prepare_for_convert_expr(const exprt &expr)
   return lowered_expr;
 }
 
+/// Find and declare symbols used in an expression
+/// This function traverses the expression tree and creates SMT2 declarations
+/// for all symbols (variables) found. Symbols are added to identifier_map to
+/// avoid duplication declarations.
+///
+/// Determinism: The traversal of expression trees is deterministic, and solely
+/// depends on syntactic expression structure, not expression hash codes.
+///
+/// \param expr: expression to scan for symbols
 void smt2_convt::find_symbols(const exprt &expr)
 {
   if(is_zero_width(expr.type(), ns))
@@ -5260,7 +5727,7 @@ void smt2_convt::find_symbols(const exprt &expr)
     const auto &q_expr = to_quantifier_expr(expr);
     for(const auto &symbol : q_expr.variables())
     {
-      const auto identifier = symbol.get_identifier();
+      const auto identifier = symbol.identifier();
       auto id_entry =
         identifier_map.insert({identifier, identifiert{symbol.type(), true}});
       shadowed_syms.insert(
@@ -5294,7 +5761,7 @@ void smt2_convt::find_symbols(const exprt &expr)
     irep_idt identifier;
 
     if(expr.id()==ID_symbol)
-      identifier=to_symbol_expr(expr).get_identifier();
+      identifier = to_symbol_expr(expr).identifier();
     else
       identifier="nondet_"+
         id2string(to_nondet_symbol_expr(expr).get_identifier());
@@ -5335,7 +5802,22 @@ void smt2_convt::find_symbols(const exprt &expr)
         convert_type(expr.type());
       }
 
-      out << ")" << "\n";
+      out << ')' << '\n';
+
+      // We need an additional constraint for range-typed symbols,
+      // or otherwise we get satisfying assignments with values
+      // outside of the range when the size of the range isn't
+      // a power of two.
+      if(expr.type().id() == ID_range)
+      {
+        auto &range_type = to_integer_range_type(expr.type());
+        if(!is_power_of_two(range_type.size()))
+        {
+          out << "(assert (bvule " << smt2_identifier << ' ';
+          convert_expr(from_integer(range_type.to(), range_type));
+          out << "))\n"; // bvule, assert
+        }
+      }
     }
   }
   else if(expr.id() == ID_array_of)
@@ -5511,6 +5993,7 @@ void smt2_convt::find_symbols(const exprt &expr)
            expr.id() == ID_floatbv_minus ||
            expr.id() == ID_floatbv_mult ||
            expr.id() == ID_floatbv_div ||
+           expr.id() == ID_floatbv_fma ||
            expr.id() == ID_floatbv_typecast ||
            expr.id() == ID_ieee_float_equal ||
            expr.id() == ID_ieee_float_notequal ||
@@ -5818,6 +6301,36 @@ bool smt2_convt::use_array_theory(const exprt &expr)
   // arrays inside structs get flattened, unless we have datatypes
   if(expr.id() == ID_with)
     return use_array_theory(to_with_expr(expr).old());
+  else if(expr.id() == ID_if)
+  {
+    // For an array-typed if-then-else, the SMT sort produced by
+    // convert_expr (see the ID_if branch above) is determined by the
+    // sorts chosen for its two operands:
+    // - if both branches are bit-vector-encoded, i.e. neither uses array
+    //   theory (typically because both are array-typed members of a
+    //   struct that has been flattened to a bit-vector), the resulting
+    //   ite is a bit-vector;
+    // - if both branches use array theory, the ite is an SMT array;
+    // - if exactly one branch uses array theory, the ID_if handler in
+    //   convert_expr unflattens the bit-vector branch back to an SMT
+    //   array (see the wheret::BEGIN/wheret::END unflatten calls), so
+    //   the ite is again an SMT array.
+    // The ite therefore "uses array theory" iff at least one branch
+    // does. Without this clause, the fall-through below would
+    // unconditionally return true for ID_if (since ID_if != ID_member),
+    // which is wrong in the symmetric bit-vector case: callers like
+    // convert_index, convert_with, flatten2bv, and the array-typed
+    // define-fun path would then emit array-theory operators -- e.g.
+    // (select <ite> ...) or (store <ite> ...) -- on a bit-vector
+    // operand, producing ill-typed SMT-LIB 2 that is rejected by
+    // conforming solvers (cf. issue #9008). The asymmetric case was
+    // already handled, for ID_with branches, in the ID_if conversion
+    // logic of convert_expr; the present clause makes use_array_theory
+    // consistent with that conversion in all four combinations.
+    const if_exprt &if_expr = to_if_expr(expr);
+    return use_array_theory(if_expr.true_case()) ||
+           use_array_theory(if_expr.false_case());
+  }
   else
     return use_datatypes || expr.id() != ID_member;
 }
@@ -5826,8 +6339,7 @@ void smt2_convt::convert_type(const typet &type)
 {
   if(type.id()==ID_array)
   {
-    const array_typet &array_type=to_array_type(type);
-    CHECK_RETURN(array_type.size().is_not_nil());
+    const array_typet &array_type = to_array_type(type);
 
     // we always use array theory for top-level arrays
     const typet &subtype = array_type.element_type();
@@ -5947,12 +6459,15 @@ void smt2_convt::convert_type(const typet &type)
   }
   else if(type.id() == ID_range)
   {
-    auto &range_type = to_range_type(type);
-    mp_integer size = range_type.get_to() - range_type.get_from() + 1;
-    if(size <= 0)
-      UNEXPECTEDCASE("unsuppored range type");
-    out << "(_ BitVec " << address_bits(size) << ")";
+    auto &range_type = to_integer_range_type(type);
+    if(range_type.empty())
+      UNEXPECTEDCASE("unsupported range type");
+    out << "(_ BitVec " << address_bits(range_type.size()) << ")";
   }
+  else if(type.id() == ID_string)
+    out << "String";
+  else if(type.id() == ID_regex)
+    out << "RegLan";
   else
   {
     UNEXPECTEDCASE("unsupported type: "+type.id_string());

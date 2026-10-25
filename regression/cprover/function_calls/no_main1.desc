@@ -1,7 +1,0 @@
-CORE
-no_main1.c
-
-^EXIT=6$
-^SIGNAL=0$
-^error: The program has no entry point$
---

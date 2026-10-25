@@ -1,8 +1,11 @@
+// SPDX-License-Identifier: BSD-4-Clause
+// SPDX-FileCopyrightText: 2026 C2BTOR contributors
+
 /*******************************************************************\
 
 Module: Goto 程序到 BTOR2 的转换
 
-Author: Based on CBMC project
+Authors: C2BTOR contributors; CBMC attribution is retained in LICENSES/
 
 \*******************************************************************/
 
@@ -45,6 +48,8 @@ Author: Based on CBMC project
 #include <iosfwd>
 #include "array_encoding.h"
 #include "property_options.h"
+#include "scalar_projection.h"
+#include "optimization_options.h"
 
 /// 将 goto 模型转换为 BTOR2 格式
 ///
@@ -63,7 +68,8 @@ Author: Based on CBMC project
 /// @param out BTOR2 输出流
 /// @param log 消息处理器（用于警告和错误）
 /// @param source_map optional JSON translation metadata (written on success)
-/// @param properties 源属性选择/合并、辅助属性输出和已折叠断言的位置
+/// @param properties 源属性选择/合并和已折叠断言的位置
+/// @param large_block_encoding merge acyclic scalar regions; emit map v2
 /// @return 错误返回 true，成功返回 false
 bool write_goto_btor2(
   const goto_modelt &goto_model,
@@ -71,9 +77,12 @@ bool write_goto_btor2(
   messaget &log,
   bool emit_warning_comments = false,
   std::ostream *source_map = nullptr,
-  unsigned heap_objects = 32,
+  unsigned heap_objects = 0,
   array_encoding_optionst array_encoding = {},
-  btor2_property_optionst properties = {});
+  btor2_property_optionst properties = {},
+  bool large_block_encoding = false,
+  scalar_projection_modet scalar_projection = scalar_projection_modet::NONE,
+  btor2_optimization_optionst optimizations = {});
 
 /// 将单个 goto 函数转换为 BTOR2 格式
 ///
@@ -86,7 +95,8 @@ bool write_goto_btor2(
 /// @param out BTOR2 输出流
 /// @param log 消息处理器
 /// @param source_map optional JSON translation metadata (written on success)
-/// @param properties 源属性选择/合并、辅助属性输出和已折叠断言的位置
+/// @param properties 源属性选择/合并和已折叠断言的位置
+/// @param large_block_encoding merge acyclic scalar regions; emit map v2
 /// @return 错误返回 true，成功返回 false
 bool write_goto_function_btor2(
   const goto_functionst::goto_functiont &function,
@@ -96,8 +106,11 @@ bool write_goto_function_btor2(
   messaget &log,
   bool emit_warning_comments = false,
   std::ostream *source_map = nullptr,
-  unsigned heap_objects = 32,
+  unsigned heap_objects = 0,
   array_encoding_optionst array_encoding = {},
-  btor2_property_optionst properties = {});
+  btor2_property_optionst properties = {},
+  bool large_block_encoding = false,
+  scalar_projection_modet scalar_projection = scalar_projection_modet::NONE,
+  btor2_optimization_optionst optimizations = {});
 
 #endif // CPROVER_GOTO_BTOR2_GOTO_BTOR2_H

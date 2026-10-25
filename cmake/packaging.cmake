@@ -1,11 +1,11 @@
 set(CPACK_PACKAGE_NAME "c2btor")
 set(CPACK_PACKAGE_VENDOR "C2BTOR contributors")
-set(CPACK_PACKAGE_CONTACT "https://github.com/westtide/c2btor/issues")
+set(CPACK_PACKAGE_CONTACT "https://github.com/westtide/cbmc/issues")
 set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "C2BTOR translates C programs to bit-precise BTOR2 models")
 set(CPACK_PACKAGE_DESCRIPTION
 "C2BTOR translates C through CBMC GotoIR to BTOR2 transition systems,
 with object memory, IEEE-754 bit-vector circuits and source-mapped
-violation witnesses validated through BtorSim and CPAchecker.")
+YAML violation witnesses with BtorSim replay.")
 
 # Package only the explicitly built product, without rebuilding upstream tools.
 set(CMAKE_SKIP_INSTALL_ALL_DEPENDENCY TRUE)
@@ -18,14 +18,11 @@ set(CPACK_PACKAGE_VERSION_MAJOR ${PROJECT_VERSION_MAJOR})
 set(CPACK_PACKAGE_VERSION_MINOR ${PROJECT_VERSION_MINOR})
 set(CPACK_PACKAGE_VERSION_PATCH ${PROJECT_VERSION_PATCH})
 
-# This should always be set, just isn鈥檛 by default for awkward backward compatibility reasons
+# This should always be set, just isn’t by default for awkward backward compatibility reasons
 set(CPACK_VERBATIM_VARIABLES YES)
 
-# The WiX package generator expects licenses to end in .txt or .rtf...
-file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
-file(RENAME "${CMAKE_CURRENT_BINARY_DIR}/LICENSE" "${CMAKE_CURRENT_BINARY_DIR}/LICENSE.txt")
-
-set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_CURRENT_BINARY_DIR}/LICENSE.txt")
+# The WiX package generator expects licenses to end in .txt or .rtf.
+set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_SOURCE_DIR}/LICENSES/CBMC-BSD-4-Clause.txt")
 set(CPACK_PACKAGE_RESOURCE_FILE_README "${CMAKE_CURRENT_SOURCE_DIR}/README.md")
 
 # Automatically find dependencies for shared libraries
@@ -70,6 +67,6 @@ elseif(WIN32)
 endif()
 
 # Yes, this has to go at the bottom,
-# otherwise it can鈥檛 take into account
+# otherwise it can’t take into account
 # all the variables we set above!
 include(CPack)

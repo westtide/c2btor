@@ -12,6 +12,7 @@ Author: Daniel Kroening, kroening@kroening.com
 #ifndef CPROVER_ANSI_C_C_TYPECHECK_BASE_H
 #define CPROVER_ANSI_C_C_TYPECHECK_BASE_H
 
+#include <util/mp_arith.h>
 #include <util/namespace.h>
 #include <util/std_code.h>
 #include <util/symbol.h>
@@ -22,6 +23,7 @@ Author: Daniel Kroening, kroening@kroening.com
 #include <map>
 
 class ansi_c_declarationt;
+class bitvector_typet;
 class c_bit_field_typet;
 class shift_exprt;
 

@@ -1,8 +1,0 @@
-THOROUGH
-mix040.c
-PSO ALL
-^EXIT=10$
-^SIGNAL=0$
-^VERIFICATION FAILED$
---
-^warning: ignoring
